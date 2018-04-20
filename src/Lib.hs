@@ -8,11 +8,12 @@
 module Lib
    where
 
+import Data.Text (Text)
 import           Control.Logger.Simple
 import           Data.Aeson
 import           Data.ByteString                      (ByteString)
 import qualified Data.ByteString.Char8                as C8
-import           Data.ByteString.Lazy                 (toStrict)
+import           Data.ByteString.Lazy                 (toStrict, fromStrict)
 import           Data.HVect                           (HVect ((:&:), HNil))
 import           Data.Maybe                           (catMaybes, fromMaybe, listToMaybe)
 import           Data.Monoid                          ((<>))
@@ -28,7 +29,7 @@ import           System.Environment                   (lookupEnv)
 import           Web.Spock                            (SpockActionCtx, SpockM, body, getContext,
                                                        getState, header, jsonBody, middleware,
                                                        post, prehook, rawHeader, root, runSpock,
-                                                       setStatus, spock, text)
+                                                       setStatus, spock, text, get)
 import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase), defaultSpockCfg)
 
 
@@ -50,19 +51,12 @@ app :: Api
 app = prehook initHook $ do
   prehook authHook $ post root $ do
       event <- body
-      eventM <- jsonBody
-
       eventKind <- rawHeader "X-Github-Event"
-      let value = fmap (`encodeEvent` event) eventKind
-
-      let allADem = catMaybes $ fmap (`matchEvent` fromMaybe "no-header" eventKind) events
-      logDebug (T.pack $ show allADem)
-      value <- case eventM of
-        Nothing                          -> pure "I dunno what that is"
-        -- Just (event :: PullRequestEvent) -> pure $ getUrl $ whPullReqUrl $ evPullReqPayload event
-        Just (event :: IssueCommentEvent) -> pure $ whIssueCommentBody $ evIssueCommentPayload event
-      logDebug value
-      text value
+      let value = (`encodeEvent` event) =<< eventKind
+      logDebug (T.pack $ show value)
+      text $ selectResponse value event
+  get "/a" $ do
+      text "rocking it"
 
 
 initHook :: AuthedApiAction () (HVect '[])
@@ -93,19 +87,21 @@ run =
     key <- maybe mempty C8.pack <$> lookupEnv "GITHUB_KEY"
     let appState = AppState key
     spockCfg <- defaultSpockCfg () PCNoDatabase appState
-    runSpock 8000 (spock spockCfg $ middleware logger >> app)
+    runSpock 9000 (spock spockCfg $ middleware logger >> app)
 
 
 data Events = IssueComment IssueCommentEvent | Issues IssuesEvent | PullRequest PullRequestEvent
 
-encodeEvent event bs =
-  let match = listToMaybe $ catMaybes $ fmap (`matchEvent` event) events
+encodeEvent :: ByteString -> p -> Maybe RepoWebhookEvent
+encodeEvent event' _bs =
+  let match = listToMaybe $ catMaybes $ fmap (`matchEvent` event') events
   in match
 
-
-xo bs WebhookIssueCommentEvent = IssueComment
-xo bs WebhookIssuesEvent       = Issues
-xo bs WebhookPullRequestEvent  = PullRequest
+selectResponse :: Maybe RepoWebhookEvent -> ByteString -> Text
+selectResponse (Just WebhookIssueCommentEvent) bs = do
+  let ev = decode (fromStrict bs) :: Maybe IssueCommentEvent
+  maybe "oops" (whIssueCommentBody . evIssueCommentPayload) ev
+selectResponse _ _ = "Look yeah"
 
 
 events :: [RepoWebhookEvent]
