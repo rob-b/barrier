@@ -124,16 +124,20 @@ app :: Api
 app = do
   prehook initHook $ do
     prehook authHook $
-      post root $ do
-        event <- body
-        eventKind <- rawHeader "X-Github-Event"
-        let eventType = selectEventType =<< eventKind
-        case selectResponse eventType event of
-          Left reason -> do
-            setStatus status422
-            json reason
-          Right value -> json value
+      post root handleEvent
   get "/a" $ do text "rocking it"
+
+
+handleEvent :: AuthedApiAction (HVect (SignedRequest ': xs)) a
+handleEvent = do
+  event <- body
+  eventKind <- rawHeader "X-Github-Event"
+  let eventType = selectEventType =<< eventKind
+  case selectResponse eventType event of
+    Left reason -> do
+      setStatus status422
+      json reason
+    Right value -> json value
 
 
 run :: IO ()
