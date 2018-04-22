@@ -5,7 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 
-module Lib
+module Server
    where
 
 import           Control.Logger.Simple                (LogConfig (LogConfig), withGlobalLogging)
