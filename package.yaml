@@ -30,11 +30,18 @@ dependencies:
 - hvect
 - simple-logger
 - text
+- vector
+- wai
 - wai-extra
 
 library:
   source-dirs: src
-  ghc-options: -Wall -Wincomplete-uni-patterns -Wincomplete-record-updates -Wmissing-import-lists
+  ghc-options: 
+    - -Wall
+    - -Wincomplete-uni-patterns
+    - -Wincomplete-record-updates
+    - -Wmissing-import-lists
+    - -Wcompat
 
 executables:
   barrier:

@@ -8,34 +8,39 @@
 module Lib
    where
 
-import Data.Text (Text)
-import           Control.Logger.Simple
-import           Data.Aeson
+import           Control.Logger.Simple                (LogConfig (LogConfig), withGlobalLogging)
+import           Control.Monad.IO.Class               (MonadIO)
+import           Data.Aeson                           (ToJSON, Value (Object), decode, encode,
+                                                       object, (.=))
 import           Data.ByteString                      (ByteString)
 import qualified Data.ByteString.Char8                as C8
-import           Data.ByteString.Lazy                 (toStrict, fromStrict)
+import           Data.ByteString.Lazy                 (fromStrict, toStrict)
 import           Data.HVect                           (HVect ((:&:), HNil))
-import           Data.Maybe                           (catMaybes, fromMaybe, listToMaybe)
+import           Data.Maybe                           (catMaybes, listToMaybe)
 import           Data.Monoid                          ((<>))
-import qualified Data.Text                            as T
 import           Data.Text.Encoding                   (decodeUtf8)
-import           GitHub.Data.Webhooks
-import           GitHub.Data.Webhooks.Events
-import           GitHub.Data.Webhooks.Payload
+import qualified Data.Vector                          as V
+import           GHC.Exts                             (fromList)
+import           GitHub.Data.Webhooks                 (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
+import           GitHub.Data.Webhooks.Events          (IssueCommentEvent, evIssueCommentPayload)
+import           GitHub.Data.Webhooks.Payload         (whIssueCommentBody)
 import           GitHub.Data.Webhooks.Secure          (isSecurePayload)
-import           Network.HTTP.Types.Status            (status201, status401, status422)
-import           Network.Wai.Middleware.RequestLogger (logStdout, logStdoutDev)
+import           Network.HTTP.Types.Status            (Status (Status), status401, status422)
+import           Network.Wai                          (Middleware)
+import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import           System.Environment                   (lookupEnv)
-import           Web.Spock                            (SpockActionCtx, SpockM, body, getContext,
-                                                       getState, header, jsonBody, middleware,
-                                                       post, prehook, rawHeader, root, runSpock,
-                                                       setStatus, spock, text, get)
-import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase), defaultSpockCfg)
+import           Web.Spock                            (ActionCtxT, SpockActionCtx, SpockM, body,
+                                                       get, getContext, getState, header, json,
+                                                       middleware, post, prehook, rawHeader, root,
+                                                       runSpock, setStatus, spock, text)
+import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase), SpockCfg,
+                                                       defaultSpockCfg, spc_errorHandler)
 
 
+logger :: Middleware
 logger = logStdoutDev
 
-data User = User
+data SignedRequest = SignedRequest
 
 newtype AppState = AppState
   { appStateToken :: ByteString
@@ -47,65 +52,65 @@ type ApiAction a = SpockActionCtx (HVect '[]) () () AppState a
 type AuthedApiAction ctx a = SpockActionCtx ctx () () AppState a
 
 
-app :: Api
-app = prehook initHook $ do
-  prehook authHook $ post root $ do
-      event <- body
-      eventKind <- rawHeader "X-Github-Event"
-      let value = (`encodeEvent` event) =<< eventKind
-      logDebug (T.pack $ show value)
-      text $ selectResponse value event
-  get "/a" $ do
-      text "rocking it"
-
-
 initHook :: AuthedApiAction () (HVect '[])
 initHook = return HNil
 
 
-authHook :: AuthedApiAction (HVect xs) (HVect (User ': xs))
+authHook :: AuthedApiAction (HVect xs) (HVect (SignedRequest ': xs))
 authHook = do
   oldCtx <- getContext
   appState <- getState
   payload <- body
-  logDebug (decodeUtf8 payload)
   signature <- header "X-Hub-Signature"
   if isSecurePayload (decodeUtf8 $ appStateToken appState) signature payload
-    then return (User :&: oldCtx)
+    then return (SignedRequest :&: oldCtx)
     else do
       setStatus status401
       text "get lost"
 
 
--- barrierConfig :: SpockCfg conn sess st -> SpockCfg conn sess st
--- barrierConfig cfg = cfg { spc_errorHandler = errorHandler }
+errorHandler :: MonadIO m => Status -> ActionCtxT ctx m b
+errorHandler status = json $ prepareError status
+  where
+    prepareError :: Status -> Value
+    prepareError (Status code msg) =
+      let inner = V.singleton $ object ["status" .= code, "detail" .= decodeUtf8 msg]
+      in object ["errors" .= inner]
 
 
-run :: IO ()
-run =
-  withGlobalLogging (LogConfig (Just "logfile.txt") False) $ do
-    key <- maybe mempty C8.pack <$> lookupEnv "GITHUB_KEY"
-    let appState = AppState key
-    spockCfg <- defaultSpockCfg () PCNoDatabase appState
-    runSpock 9000 (spock spockCfg $ middleware logger >> app)
+barrierConfig :: SpockCfg conn sess st -> SpockCfg conn sess st
+barrierConfig cfg = cfg { spc_errorHandler = errorHandler }
 
 
-data Events = IssueComment IssueCommentEvent | Issues IssuesEvent | PullRequest PullRequestEvent
-
-encodeEvent :: ByteString -> p -> Maybe RepoWebhookEvent
-encodeEvent event' _bs =
+selectEventType :: ByteString -> Maybe RepoWebhookEvent
+selectEventType event' =
   let match = listToMaybe $ catMaybes $ fmap (`matchEvent` event') events
   in match
 
-selectResponse :: Maybe RepoWebhookEvent -> ByteString -> Text
-selectResponse (Just WebhookIssueCommentEvent) bs = do
+
+selectResponse :: Maybe RepoWebhookEvent -> ByteString -> Either Value Value
+selectResponse (Just WebhookIssueCommentEvent) bs = Right $ handleCommentEvent bs
+selectResponse (Just x) _ =
+  Left (Object $ fromList ["error" .= (("Handler not added for event: " <> show x) :: String)])
+selectResponse Nothing _ =
+  Left (Object $ fromList ["error" .= ("Unsupported event: event" :: Value)])
+
+
+handleCommentEvent :: ByteString -> Value
+handleCommentEvent bs =
   let ev = decode (fromStrict bs) :: Maybe IssueCommentEvent
-  maybe "oops" (whIssueCommentBody . evIssueCommentPayload) ev
-selectResponse _ _ = "Look yeah"
+  in case ev of
+       Nothing ->
+         let inner = V.singleton $ object ["detail" .= ("Failed to parse event" :: String)]
+         in object ["errors" .= inner]
+       Just ev' ->
+         let inner = V.singleton $ object ["comment" .= comment]
+             comment = whIssueCommentBody $ evIssueCommentPayload ev'
+         in object ["data" .= inner]
 
 
 events :: [RepoWebhookEvent]
-events = [WebhookIssueCommentEvent, WebhookIssuesEvent, WebhookPullRequestEvent]
+events = [WebhookIssueCommentEvent, WebhookPullRequestEvent]
 
 
 matchEvent :: ToJSON a => a -> ByteString -> Maybe a
@@ -113,3 +118,28 @@ matchEvent event eventLabel
   | toStrict( encode event) == name' = Just event
   | otherwise = Nothing
   where name' = "\"" <> eventLabel <> "\""
+
+
+app :: Api
+app = do
+  prehook initHook $ do
+    prehook authHook $
+      post root $ do
+        event <- body
+        eventKind <- rawHeader "X-Github-Event"
+        let eventType = selectEventType =<< eventKind
+        case selectResponse eventType event of
+          Left reason -> do
+            setStatus status422
+            json reason
+          Right value -> json value
+  get "/a" $ do text "rocking it"
+
+
+run :: IO ()
+run =
+  withGlobalLogging (LogConfig (Just "logfile.txt") False) $ do
+    key <- maybe mempty C8.pack <$> lookupEnv "GITHUB_KEY"
+    let appState = AppState key
+    spockCfg <- barrierConfig <$> defaultSpockCfg () PCNoDatabase appState
+    runSpock 9000 (spock spockCfg $ middleware logger >> app)
