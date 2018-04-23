@@ -18,9 +18,7 @@ import           GitHub.Data.Webhooks.Payload (whIssueCommentBody, whPullReqHead
 
 
 selectEventType :: ByteString -> Maybe RepoWebhookEvent
-selectEventType event' =
-  let match = listToMaybe $ catMaybes $ fmap (`matchEvent` event') events
-  in match
+selectEventType event' = listToMaybe $ catMaybes $ fmap (`matchEvent` event') events
 
 
 selectResponse :: Maybe RepoWebhookEvent -> ByteString -> Either Value Value

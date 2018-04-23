@@ -23,7 +23,7 @@ import           Network.Wai                          (Middleware)
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import           System.Environment                   (lookupEnv)
 import           Web.Spock                            (ActionCtxT, SpockActionCtx, SpockM, body,
-                                                       get, getContext, getState, header, json,
+                                                       getContext, getState, header, json,
                                                        middleware, post, prehook, rawHeader, root,
                                                        runSpock, setStatus, spock, text)
 import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase), SpockCfg,
@@ -80,7 +80,6 @@ app = do
   prehook initHook $ do
     prehook authHook $
       post root handleEvent
-  get "/a" $ do text "rocking it"
 
 
 handleEvent :: AuthedApiAction (HVect (SignedRequest ': xs)) a
