@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Events where
+
 import           Data.Aeson                   (ToJSON, Value (Object), decode, encode, object,
                                                (.=))
 import           Data.ByteString              (ByteString)
@@ -9,7 +10,7 @@ import           Data.Monoid                  ((<>))
 import qualified Data.Vector                  as V
 import           GHC.Exts                     (fromList)
 import           GitHub.Data.Webhooks         (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
-import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, evIssueCommentPayload)
+import           GitHub.Data.Webhooks.Events  (PullRequestEvent, IssueCommentEvent, evIssueCommentPayload)
 import           GitHub.Data.Webhooks.Payload (whIssueCommentBody)
 
 
@@ -20,15 +21,28 @@ selectEventType event' =
 
 
 selectResponse :: Maybe RepoWebhookEvent -> ByteString -> Either Value Value
-selectResponse (Just WebhookIssueCommentEvent) bs = Right $ handleCommentEvent bs
+selectResponse (Just WebhookIssueCommentEvent) bs = Right $ handleIssueCommentEvent bs
 selectResponse (Just x) _ =
   Left (Object $ fromList ["error" .= (("Handler not added for event: " <> show x) :: String)])
 selectResponse Nothing _ =
   Left (Object $ fromList ["error" .= ("Unsupported event: event" :: Value)])
 
 
-handleCommentEvent :: ByteString -> Value
-handleCommentEvent bs =
+handlePullRequestEvent :: ByteString -> Value
+handlePullRequestEvent bs =
+  let ev = decode (fromStrict bs) :: Maybe PullRequestEvent
+  in case ev of
+       Nothing ->
+         let inner = V.singleton $ object ["detail" .= ("Failed to parse event" :: String)]
+         in object ["errors" .= inner]
+       Just ev' ->
+         let inner = V.singleton $ object ["comment" .= comment]
+             comment = show ev'
+         in object ["data" .= inner]
+
+
+handleIssueCommentEvent :: ByteString -> Value
+handleIssueCommentEvent bs =
   let ev = decode (fromStrict bs) :: Maybe IssueCommentEvent
   in case ev of
        Nothing ->
