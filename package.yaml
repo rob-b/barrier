@@ -23,12 +23,14 @@ dependencies:
 - base >= 4.7 && < 5
 - Spock
 - aeson
+- async
 - bytestring
 - github
 - github-webhooks
 - http-types
 - hvect
 - simple-logger
+- stm
 - text
 - vector
 - wai

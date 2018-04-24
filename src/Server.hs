@@ -8,9 +8,11 @@
 module Server
    where
 
+import           Control.Concurrent.STM.TBQueue       (TBQueue)
 import           Control.Logger.Simple                (LogConfig (LogConfig), withGlobalLogging)
-import           Control.Monad.IO.Class               (MonadIO)
-import           Data.Aeson                           (Value, object, (.=))
+import           Control.Monad                        (void)
+import           Control.Monad.IO.Class               (MonadIO, liftIO)
+import           Data.Aeson                           (ToJSON, Value, object, (.=))
 import           Data.ByteString                      (ByteString)
 import qualified Data.ByteString.Char8                as C8
 import           Data.HVect                           (HVect ((:&:), HNil))
@@ -21,11 +23,12 @@ import           GitHub.Data.Webhooks.Secure          (isSecurePayload)
 import           Network.HTTP.Types.Status            (Status (Status), status401, status422)
 import           Network.Wai                          (Middleware)
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
+import qualified Queue                                as Q
 import           System.Environment                   (lookupEnv)
 import           Web.Spock                            (ActionCtxT, SpockActionCtx, SpockM, body,
-                                                       getContext, getState, header, json,
+                                                       get, getContext, getState, header, json,
                                                        middleware, post, prehook, rawHeader, root,
-                                                       runSpock, setStatus, spock, text)
+                                                       runSpock, setStatus, spock)
 import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase), SpockCfg,
                                                        defaultSpockCfg, spc_errorHandler)
 
@@ -35,8 +38,9 @@ logger = logStdoutDev
 
 data SignedRequest = SignedRequest
 
-newtype AppState = AppState
+data AppState = AppState
   { appStateToken :: ByteString
+  , appStateQueue :: TBQueue (IO ())
   }
 
 
@@ -59,16 +63,17 @@ authHook = do
     then return (SignedRequest :&: oldCtx)
     else do
       setStatus status401
-      text "get lost"
+      json (errorObject (401 :: Int) "Invalid signature")
+
+
+errorObject :: ToJSON v => v -> ByteString -> Value
+errorObject code msg =
+  let inner = V.singleton $ object ["status" .= code, "detail" .= decodeUtf8 msg]
+  in object ["errors" .= inner]
 
 
 errorHandler :: MonadIO m => Status -> ActionCtxT ctx m b
-errorHandler = json . prepareError
-  where
-    prepareError :: Status -> Value
-    prepareError (Status code msg) =
-      let inner = V.singleton $ object ["status" .= code, "detail" .= decodeUtf8 msg]
-      in object ["errors" .= inner]
+errorHandler (Status code msg) = json (errorObject code msg)
 
 
 barrierConfig :: SpockCfg conn sess st -> SpockCfg conn sess st
@@ -80,6 +85,10 @@ app = do
   prehook initHook $ do
     prehook authHook $
       post root handleEvent
+  get "/a" $ do
+      queue <- appStateQueue <$> getState
+      _ <- liftIO $ Q.add queue (void xo)
+      json ("{}" :: Value)
 
 
 handleEvent :: AuthedApiAction (HVect (SignedRequest ': xs)) a
@@ -91,13 +100,24 @@ handleEvent = do
     Left reason -> do
       setStatus status422
       json reason
-    Right value -> json value
+    Right value -> do
+      queue <- appStateQueue <$> getState
+      _ <- liftIO $ Q.add queue (void xo)
+      json value
+
+
+xo :: IO ()
+xo = do
+  _ <- writeFile "example.txt" "this is my content"
+  pure ()
 
 
 run :: IO ()
 run =
   withGlobalLogging (LogConfig (Just "logfile.txt") False) $ do
     key <- maybe mempty C8.pack <$> lookupEnv "GITHUB_KEY"
-    let appState = AppState key
+    queue <- Q.make 10
+    _ <- Q.worker queue
+    let appState = AppState key queue
     spockCfg <- barrierConfig <$> defaultSpockCfg () PCNoDatabase appState
     runSpock 9000 (spock spockCfg $ middleware logger >> app)
