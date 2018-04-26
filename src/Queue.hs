@@ -1,28 +1,34 @@
 module Queue where
 
 
-import           Control.Concurrent.Async       (Async, async)
-import           Control.Concurrent.STM.TBQueue (TBQueue, newTBQueueIO, readTBQueue, writeTBQueue)
-import           Control.Monad                  (forever, join)
-import           Control.Monad.STM              (atomically)
+import           Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueueIO, readTBMQueue,
+                                                  tryWriteTBMQueue)
+import           Control.Monad                   (unless)
+import           Control.Monad.STM               (atomically)
 
 
 type Action = IO ()
 
 
-make :: Int -> IO (TBQueue Action)
-make = newTBQueueIO
+make :: Int -> IO (TBMQueue Action)
+make = newTBMQueueIO
 
 
-run :: TBQueue Action -> Action
-run q = join (atomically $ readTBQueue q)
+add :: TBMQueue Action -> Action -> IO ()
+add q action = do
+  addM <- atomically $ tryWriteTBMQueue q action
+  case addM of
+    Nothing    -> putStrLn "Is the queue closed"
+    Just added -> unless added $ putStrLn "Failed to add action"
 
 
-add :: TBQueue Action -> Action -> IO ()
-add q action = atomically $ writeTBQueue q action
-
-
-worker :: TBQueue Action -> IO (Async a)
-worker q = async $ forever $ do
-  _ <- run q
-  pure ()
+worker :: TBMQueue Action -> IO ()
+worker q = do
+  let go = do
+        actionM <- atomically $ readTBMQueue q
+        case actionM of
+          Nothing -> pure ()
+          Just action -> do
+            _ <- action
+            go
+  go

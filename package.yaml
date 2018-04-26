@@ -29,8 +29,10 @@ dependencies:
 - github-webhooks
 - http-types
 - hvect
+- safe-exceptions
 - simple-logger
 - stm
+- stm-chans
 - text
 - vector
 - wai

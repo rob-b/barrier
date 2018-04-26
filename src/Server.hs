@@ -8,10 +8,13 @@
 module Server
    where
 
-import           Control.Concurrent.STM.TBQueue       (TBQueue)
+import           Control.Concurrent.Async             (Async, async, wait)
+import           Control.Concurrent.STM.TBMQueue      (TBMQueue, closeTBMQueue)
+import           Control.Exception.Safe               (bracket)
 import           Control.Logger.Simple                (LogConfig (LogConfig), withGlobalLogging)
 import           Control.Monad                        (void)
 import           Control.Monad.IO.Class               (MonadIO, liftIO)
+import           Control.Monad.STM                    (atomically)
 import           Data.Aeson                           (ToJSON, Value, object, (.=))
 import           Data.ByteString                      (ByteString)
 import qualified Data.ByteString.Char8                as C8
@@ -40,7 +43,7 @@ data SignedRequest = SignedRequest
 
 data AppState = AppState
   { appStateToken :: ByteString
-  , appStateQueue :: TBQueue (IO ())
+  , appStateQueue :: TBMQueue (IO ())
   }
 
 
@@ -108,16 +111,25 @@ handleEvent = do
 
 xo :: IO ()
 xo = do
-  _ <- writeFile "example.txt" "this is my content"
+  _ <- appendFile "example.txt" "this is my content\n"
   pure ()
 
 
 run :: IO ()
-run =
-  withGlobalLogging (LogConfig (Just "logfile.txt") False) $ do
-    key <- maybe mempty C8.pack <$> lookupEnv "GITHUB_KEY"
-    queue <- Q.make 10
-    _ <- Q.worker queue
-    let appState = AppState key queue
-    spockCfg <- barrierConfig <$> defaultSpockCfg () PCNoDatabase appState
-    runSpock 9000 (spock spockCfg $ middleware logger >> app)
+run = withGlobalLogging (LogConfig (Just "logfile.txt") False) (bracket setup shutDown runServer)
+  where
+    setup :: IO (TBMQueue Q.Action, Async ())
+    setup = do
+      queue <- Q.make 100
+      workerRef <- async $ Q.worker queue
+      pure (queue, workerRef)
+    runServer :: (TBMQueue Q.Action, b) -> IO ()
+    runServer (queue, _worker) = do
+      key <- maybe mempty C8.pack <$> lookupEnv "GITHUB_KEY"
+      let appState = AppState key queue
+      spockCfg <- barrierConfig <$> defaultSpockCfg () PCNoDatabase appState
+      runSpock 9000 (spock spockCfg $ middleware logger >> app)
+    shutDown :: (TBMQueue a, Async b) -> IO b
+    shutDown (queue, worker) = do
+      atomically $ closeTBMQueue queue
+      wait worker
