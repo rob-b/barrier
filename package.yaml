@@ -25,11 +25,13 @@ dependencies:
 - aeson
 - async
 - bytestring
+- data-default-class
 - github
 - github-webhooks
 - http-types
 - hvect
 - pcre-heavy
+- req
 - safe-exceptions
 - simple-logger
 - stm
