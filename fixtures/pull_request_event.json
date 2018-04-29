@@ -58,7 +58,7 @@
     "statuses_url": "https://api.github.com/repos/rob-b/barrier/statuses/1eba974c425466bd8550ccd3d3c23f5dce63f459",
     "head": {
       "label": "rob-b:robb/this-is-a-pr",
-      "ref": "robb/this-is-a-pr",
+      "ref": "robb/ch123/this-is-a-pr",
       "sha": "1eba974c425466bd8550ccd3d3c23f5dce63f459",
       "user": {
         "login": "rob-b",

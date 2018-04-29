@@ -3,5 +3,5 @@ packages:
 - .
 extra-deps:
   - simple-logger-0.0.4
-  - git: https://github.com/rob-b/github-webhooks.git
-    commit: 4ae76a6
+  - git: https://github.com/onrock-eng/github-webhooks.git
+    commit: 59322ff1266e0e336046c19c6dc56d895234f8ab

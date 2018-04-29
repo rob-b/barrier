@@ -21,7 +21,8 @@ import qualified Data.ByteString.Char8                as C8
 import           Data.HVect                           (HVect ((:&:), HNil))
 import           Data.Text.Encoding                   (decodeUtf8)
 import qualified Data.Vector                          as V
-import           Events                               (selectEventType, selectResponse)
+import           Events                               (selectAction, selectEventType,
+                                                       selectResponse)
 import           GitHub.Data.Webhooks.Secure          (isSecurePayload)
 import           Network.HTTP.Types.Status            (Status (Status), status401, status422)
 import           Network.Wai                          (Middleware)
@@ -96,17 +97,23 @@ app = do
 
 handleEvent :: AuthedApiAction (HVect (SignedRequest ': xs)) a
 handleEvent = do
-  event <- body
-  eventKind <- rawHeader "X-Github-Event"
-  let eventType = selectEventType =<< eventKind
-  case selectResponse eventType event of
-    Left reason -> do
+  bs <- body
+  eventHeader <- rawHeader "X-Github-Event"
+  let eventType = flip selectEventType bs =<< eventHeader
+  case eventType of
+    Nothing -> do
       setStatus status422
+      let reason = errorObject (422 :: Int) "Unsupported event"
       json reason
-    Right value -> do
-      queue <- appStateQueue <$> getState
-      _ <- liftIO $ Q.add queue (void xo)
-      json value
+    Just wrapped -> do
+      let actionM = selectAction wrapped
+      case actionM of
+        Nothing -> pure ()
+        Just action -> do
+          queue <- appStateQueue <$> getState
+          _ <- liftIO $ Q.add queue (void action)
+          pure ()
+      json (selectResponse wrapped)
 
 
 xo :: IO ()

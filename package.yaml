@@ -29,6 +29,7 @@ dependencies:
 - github-webhooks
 - http-types
 - hvect
+- pcre-heavy
 - safe-exceptions
 - simple-logger
 - stm
