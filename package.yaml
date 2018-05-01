@@ -25,13 +25,16 @@ dependencies:
 - aeson
 - async
 - bytestring
+- connection
 - data-default-class
 - github
 - github-webhooks
 - http-client
+- http-client-tls
 - http-types
 - hvect
 - pcre-heavy
+- read-env-var
 - req
 - safe-exceptions
 - simple-logger
