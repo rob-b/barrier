@@ -2,19 +2,33 @@
 
 module Clubhouse (ask) where
 
+import           Control.Monad          (void)
 import           Control.Monad.IO.Class
 import           Data.Aeson
 import           Data.Default.Class
+import qualified Network.HTTP.Client    as Client
 import           Network.HTTP.Req
+import           Network.HTTP.Types     (statusCode)
 
 
 httpConfig :: HttpConfig
-httpConfig = def { httpConfigCheckResponse = \_ _ _ -> Nothing }
+httpConfig = def { httpConfigCheckResponse = check }
 
-ask :: IO ()
-ask =
+
+check _ response preview =
+  let scode = statusCode' response
+  in if (200 <= scode && scode < 300) || scode == 401
+       then Nothing
+       else Just (Client.StatusCodeException (void response) preview)
+
+  where
+    statusCode' :: Client.Response a -> Int
+    statusCode' = statusCode . Client.responseStatus
+
+
+ask :: Int -> IO ()
+ask storyId =
   runReq httpConfig $ do
-    let storyId = 123 :: Int
     r <-
       req
         GET
@@ -23,7 +37,4 @@ ask =
         jsonResponse
         ("token" =: ("something" :: String))
     let scode = responseStatusCode r
-    if (200 <= scode && scode < 300) || scode == 401
-      then error "good"
-      else error "bad"
     liftIO $ print (responseBody r :: Value)
