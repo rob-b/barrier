@@ -4,7 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns        #-}
 
-module Events where
+module Barrier.Events where
 
 
 import           Data.Aeson                   (ToJSON, Value, decode, encode, object, (.=))

@@ -2,8 +2,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
-module Clubhouse where
+module Barrier.Clubhouse where
 
+import           Barrier.Server          (AppConfig (AppConfig), configClubhouseToken)
 import           Control.Monad           (void)
 import           Control.Monad.Reader    (ReaderT, ask, runReaderT)
 import           Data.Aeson              (FromJSON, eitherDecode, parseJSON, withObject, (.:))
@@ -22,7 +23,6 @@ import           Network.HTTP.Req        (GET (GET), HttpConfig, NoReqBody (NoRe
                                           lbsResponse, req, responseBody, responseStatusCode,
                                           runReq, (/:), (/~), (=:))
 import           Network.HTTP.Types      (statusCode)
-import           Server                  (AppConfig (AppConfig), configClubhouseToken)
 import qualified System.ReadEnvVar       as Env
 import           URI.ByteString          (Absolute, URIRef, parseURI, strictURIParserOptions)
 

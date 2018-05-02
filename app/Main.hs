@@ -1,6 +1,6 @@
 module Main where
 
-import           Server (run)
+import           Barrier.Server (run)
 
 main :: IO ()
 main = run

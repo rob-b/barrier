@@ -1,4 +1,4 @@
-module Queue where
+module Barrier.Queue where
 
 
 import           Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueueIO, readTBMQueue,
