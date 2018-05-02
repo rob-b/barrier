@@ -20,8 +20,8 @@ import           Control.Monad.IO.Class               (MonadIO, liftIO)
 import           Control.Monad.STM                    (atomically)
 import           Data.Aeson                           (ToJSON, Value, object, (.=))
 import           Data.ByteString                      (ByteString)
-import qualified Data.ByteString.Char8                as C8
 import           Data.HVect                           (HVect ((:&:), HNil))
+import qualified Data.Text                            as T
 import           Data.Text.Encoding                   (decodeUtf8)
 import qualified Data.Vector                          as V
 import           GitHub.Data.Webhooks.Secure          (isSecurePayload)
@@ -46,11 +46,11 @@ data SignedRequest = SignedRequest
 data AppConfig = AppConfig
   { configGitHubToken    :: String
   , configClubhouseToken :: String
-  }
+  } deriving (Show)
 
 data AppState = AppState
-  { appStateToken :: ByteString
-  , appStateQueue :: TBMQueue (IO ())
+  { appStateQueue  :: TBMQueue (IO ())
+  , appStateConfig :: AppConfig
   }
 
 
@@ -69,7 +69,7 @@ authHook = do
   appState <- getState
   payload <- body
   signature <- header "X-Hub-Signature"
-  if isSecurePayload (decodeUtf8 $ appStateToken appState) signature payload
+  if isSecurePayload (T.pack (configGitHubToken (appStateConfig appState))) signature payload
     then return (SignedRequest :&: oldCtx)
     else do
       setStatus status401
@@ -128,6 +128,13 @@ xo = do
   pure ()
 
 
+mkAppConfig :: IO (Maybe AppConfig)
+mkAppConfig = do
+    chTokenM <- lookupEnv "CLUBHOUSE_API_TOKEN"
+    ghTokenM <- lookupEnv "GITHUB_KEY"
+    pure $ fmap AppConfig ghTokenM <*> chTokenM
+
+
 run :: IO ()
 run = withGlobalLogging (LogConfig (Just "logfile.txt") False) (bracket setup shutDown runServer)
   where
@@ -138,10 +145,13 @@ run = withGlobalLogging (LogConfig (Just "logfile.txt") False) (bracket setup sh
       pure (queue, workerRef)
     runServer :: (TBMQueue Q.Action, b) -> IO ()
     runServer (queue, _worker) = do
-      key <- maybe mempty C8.pack <$> lookupEnv "GITHUB_KEY"
-      let appState = AppState key queue
-      spockCfg <- barrierConfig <$> defaultSpockCfg () PCNoDatabase appState
-      runSpock 9000 (spock spockCfg $ middleware logger >> app)
+      appConfigM <- mkAppConfig
+      case appConfigM of
+        Nothing -> putStrLn "You must set GITHUB_KEY and CLUBHOUSE_API_TOKEN"
+        Just appConfig -> do
+          let appState = AppState queue appConfig
+          spockCfg <- barrierConfig <$> defaultSpockCfg () PCNoDatabase appState
+          runSpock 9000 (spock spockCfg $ middleware logger >> app)
     shutDown :: (TBMQueue a, Async b) -> IO b
     shutDown (queue, worker) = do
       atomically $ closeTBMQueue queue

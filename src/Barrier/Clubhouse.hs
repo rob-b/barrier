@@ -4,7 +4,7 @@
 
 module Barrier.Clubhouse where
 
-import           Barrier.Server          (AppConfig (AppConfig), configClubhouseToken)
+import           Barrier.Server          (AppConfig, configClubhouseToken, mkAppConfig)
 import           Control.Monad           (void)
 import           Control.Monad.Reader    (ReaderT, ask, runReaderT)
 import           Data.Aeson              (FromJSON, eitherDecode, parseJSON, withObject, (.:))
@@ -23,7 +23,6 @@ import           Network.HTTP.Req        (GET (GET), HttpConfig, NoReqBody (NoRe
                                           lbsResponse, req, responseBody, responseStatusCode,
                                           runReq, (/:), (/~), (=:))
 import           Network.HTTP.Types      (statusCode)
-import qualified System.ReadEnvVar       as Env
 import           URI.ByteString          (Absolute, URIRef, parseURI, strictURIParserOptions)
 
 
@@ -83,12 +82,11 @@ instance FromJSON Story where
 
 test :: Int -> IO (Either StoryError Story)
 test id_ = do
-  tokenM <- Env.lookupEnv "CLUBHOUSE_API_TOKEN"
-  case tokenM of
+  appConfigM <- mkAppConfig
+  case appConfigM of
     Nothing -> error "Must set CLUBHOUSE_API_TOKEN"
-    Just token -> do
-      let appConf = AppConfig "we dont care about GH right now" token
-      runReaderT (getStory id_) appConf
+    Just appConfig -> do
+      runReaderT (getStory id_) appConfig
 
 
 data StoryError

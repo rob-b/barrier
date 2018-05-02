@@ -35,7 +35,6 @@ dependencies:
 - hvect
 - mtl
 - pcre-heavy
-- read-env-var
 - req
 - safe-exceptions
 - simple-logger
