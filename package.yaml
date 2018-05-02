@@ -42,6 +42,7 @@ dependencies:
 - stm
 - stm-chans
 - text
+- uri-bytestring
 - vector
 - wai
 - wai-extra

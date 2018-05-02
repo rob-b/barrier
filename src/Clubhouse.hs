@@ -4,32 +4,27 @@
 
 module Clubhouse where
 
-import           Control.Exception.Safe  (Exception, MonadCatch, try)
 import           Control.Monad           (void)
-import           Control.Monad.IO.Class  (MonadIO, liftIO)
-import           Control.Monad.Reader
-import           Data.Aeson              (FromJSON, decode, parseJSON,
-                                          withObject, (.:))
+import           Control.Monad.Reader    (ReaderT, ask, runReaderT)
+import           Data.Aeson              (FromJSON, eitherDecode, parseJSON, withObject, (.:))
 import           Data.ByteString         (ByteString)
 import           Data.Default.Class      (def)
-import           Data.Maybe              (fromMaybe)
 import           Data.Text               (Text)
+import           Data.Text.Encoding      (encodeUtf8)
 import           GHC.Generics            (Generic)
-import           Network.Connection      (TLSSettings (..))
+import           Network.Connection      (TLSSettings (TLSSettingsSimple),
+                                          settingDisableCertificateValidation,
+                                          settingDisableSession, settingUseServerName)
 import qualified Network.HTTP.Client     as Client
 import           Network.HTTP.Client.TLS (mkManagerSettings)
-import           Network.HTTP.Req        (GET (GET), HttpConfig,
-                                          NoReqBody (NoReqBody),
-                                          httpConfigAltManager,
-                                          httpConfigCheckResponse, https,
-                                          lbsResponse, req, responseBody,
-                                          responseStatusCode, runReq, (/:),
-                                          (/~), (=:))
+import           Network.HTTP.Req        (GET (GET), HttpConfig, NoReqBody (NoReqBody),
+                                          httpConfigAltManager, httpConfigCheckResponse, https,
+                                          lbsResponse, req, responseBody, responseStatusCode,
+                                          runReq, (/:), (/~), (=:))
 import           Network.HTTP.Types      (statusCode)
-import           Server                  (AppConfig (AppConfig),
-                                          configClubhouseToken,
-                                          configGitHubToken)
+import           Server                  (AppConfig (AppConfig), configClubhouseToken)
 import qualified System.ReadEnvVar       as Env
+import           URI.ByteString          (Absolute, URIRef, parseURI, strictURIParserOptions)
 
 
 noVerifyTlsManagerSettings :: Client.ManagerSettings
@@ -47,10 +42,14 @@ noTlsManager :: IO Client.Manager
 noTlsManager = Client.newManager noVerifyTlsManagerSettings
 
 
-httpConfig :: IO HttpConfig
-httpConfig = do
+noTlsHttpConfig :: IO HttpConfig
+noTlsHttpConfig = do
   manager <- noTlsManager
-  pure $ def { httpConfigCheckResponse = check, httpConfigAltManager = Just manager}
+  pure $ httpConfig { httpConfigAltManager = Just manager}
+
+
+httpConfig :: HttpConfig
+httpConfig = def {httpConfigCheckResponse = check}
 
 
 check :: p -> Client.Response a -> ByteString -> Maybe Client.HttpExceptionContent
@@ -62,20 +61,27 @@ check _ response preview =
 
 
 data Story = Story
-  { storyType :: Text
-  , storyId   :: Int
-  , storyName :: Text
+  { storyType :: !Text
+  , storyId   :: !Int
+  , storyName :: !Text
+  , storyUrl  :: !(URIRef Absolute)
   } deriving (Show, Generic)
 
 
 instance FromJSON Story where
   parseJSON = withObject "story" $ \o -> do
-    storyType <- o .: "story_type"
-    storyId <- o .: "id"
-    storyName <- o .: "name"
-    pure Story {..}
+    url <- o .: "app_url"
+    case parseURI strictURIParserOptions (encodeUtf8 url) of
+      Left err -> fail (show err)
+      Right value -> do
+        storyType <- o .: "story_type"
+        storyId <- o .: "id"
+        storyName <- o .: "name"
+        let storyUrl = value
+        pure Story {..}
 
 
+test :: Int -> IO (Either StoryError Story)
 test id_ = do
   tokenM <- Env.lookupEnv "CLUBHOUSE_API_TOKEN"
   case tokenM of
@@ -85,20 +91,26 @@ test id_ = do
       runReaderT (getStory id_) appConf
 
 
-getStory :: Int -> ReaderT AppConfig IO (Maybe Story)
+data StoryError
+  = StoryParseError String
+  | StoryNotFoundError
+  deriving (Show)
+
+
+getStory :: Int -> ReaderT AppConfig IO (Either StoryError Story)
 getStory id_ = do
   config <- ask
   let chToken = configClubhouseToken config
-  conf <- liftIO httpConfig
+  let url = https "api.clubhouse.io" /: "api" /: "v2" /: "stories" /~ id_
+  let conf = httpConfig
   runReq conf $ do
-    r <-
-      req
-        GET
-        (https "api.clubhouse.io" /: "api" /: "v2" /: "stories" /~ id_)
-        NoReqBody
-        lbsResponse
-        ("token" =: chToken)
+    r <- req GET url NoReqBody lbsResponse ("token" =: chToken)
     pure $
       if responseStatusCode r == 404
-        then Nothing
-        else decode $ responseBody r
+        then Left StoryNotFoundError
+        else mapLeft StoryParseError (eitherDecode $ responseBody r)
+
+
+mapLeft :: (a -> b) -> Either a c -> Either b c
+mapLeft f (Left x)  = Left $ f x
+mapLeft _ (Right x) = Right x
