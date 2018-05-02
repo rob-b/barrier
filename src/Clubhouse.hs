@@ -7,21 +7,28 @@ module Clubhouse where
 import           Control.Exception.Safe  (Exception, MonadCatch, try)
 import           Control.Monad           (void)
 import           Control.Monad.IO.Class  (MonadIO, liftIO)
-import           Data.Aeson              (FromJSON, decode, parseJSON, withObject, (.:))
+import           Control.Monad.Reader
+import           Data.Aeson              (FromJSON, decode, parseJSON,
+                                          withObject, (.:))
 import           Data.ByteString         (ByteString)
 import           Data.Default.Class      (def)
 import           Data.Maybe              (fromMaybe)
 import           Data.Text               (Text)
-import           Debug.Trace
 import           GHC.Generics            (Generic)
 import           Network.Connection      (TLSSettings (..))
 import qualified Network.HTTP.Client     as Client
 import           Network.HTTP.Client.TLS (mkManagerSettings)
-import           Network.HTTP.Req        (GET (GET), HttpConfig, NoReqBody (NoReqBody),
-                                          httpConfigAltManager, httpConfigCheckResponse, https,
-                                          jsonResponse, lbsResponse, req, responseBody,
-                                          responseStatusCode, runReq, (/:), (/~), (=:))
+import           Network.HTTP.Req        (GET (GET), HttpConfig,
+                                          NoReqBody (NoReqBody),
+                                          httpConfigAltManager,
+                                          httpConfigCheckResponse, https,
+                                          lbsResponse, req, responseBody,
+                                          responseStatusCode, runReq, (/:),
+                                          (/~), (=:))
 import           Network.HTTP.Types      (statusCode)
+import           Server                  (AppConfig (AppConfig),
+                                          configClubhouseToken,
+                                          configGitHubToken)
 import qualified System.ReadEnvVar       as Env
 
 
@@ -69,18 +76,19 @@ instance FromJSON Story where
     pure Story {..}
 
 
-ask
-  :: (MonadIO m, Exception e, MonadCatch m)
-  => Int -> m (Either e (Maybe Story))
-ask = try . test
-
-
-test
-  :: (MonadIO m)
-  => Int -> m (Maybe Story)
 test id_ = do
-  token <- Env.lookupEnv "CLUBHOUSE_API_TOKEN"
-  let token' = fromMaybe "invalid" token
+  tokenM <- Env.lookupEnv "CLUBHOUSE_API_TOKEN"
+  case tokenM of
+    Nothing -> error "Must set CLUBHOUSE_API_TOKEN"
+    Just token -> do
+      let appConf = AppConfig "we dont care about GH right now" token
+      runReaderT (getStory id_) appConf
+
+
+getStory :: Int -> ReaderT AppConfig IO (Maybe Story)
+getStory id_ = do
+  config <- ask
+  let chToken = configClubhouseToken config
   conf <- liftIO httpConfig
   runReq conf $ do
     r <-
@@ -89,8 +97,8 @@ test id_ = do
         (https "api.clubhouse.io" /: "api" /: "v2" /: "stories" /~ id_)
         NoReqBody
         lbsResponse
-        ("token" =: (token' :: String))
+        ("token" =: chToken)
     pure $
       if responseStatusCode r == 404
         then Nothing
-        else traceShow (responseBody r) (decode $ responseBody r)
+        else decode $ responseBody r
