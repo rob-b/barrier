@@ -1,13 +1,19 @@
 {-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
 module Barrier.Clubhouse where
 
-import           Barrier.Server          (AppConfig, configClubhouseToken, mkAppConfig)
+import           Barrier.Server          (AppConfig, configClubhouseToken,
+                                          mkAppConfig)
+import           Control.Error           (handleExceptT, runExceptT)
+import           Control.Exception       (SomeException)
 import           Control.Monad           (void)
+import           Control.Monad.Except    (ExceptT, mapExceptT)
 import           Control.Monad.Reader    (ReaderT, ask, runReaderT)
-import           Data.Aeson              (FromJSON, eitherDecode, parseJSON, withObject, (.:))
+import           Data.Aeson              (FromJSON, eitherDecode, parseJSON,
+                                          withObject, (.:))
 import           Data.ByteString         (ByteString)
 import           Data.Default.Class      (def)
 import           Data.Text               (Text)
@@ -15,15 +21,19 @@ import           Data.Text.Encoding      (encodeUtf8)
 import           GHC.Generics            (Generic)
 import           Network.Connection      (TLSSettings (TLSSettingsSimple),
                                           settingDisableCertificateValidation,
-                                          settingDisableSession, settingUseServerName)
+                                          settingDisableSession,
+                                          settingUseServerName)
 import qualified Network.HTTP.Client     as Client
 import           Network.HTTP.Client.TLS (mkManagerSettings)
-import           Network.HTTP.Req        (GET (GET), HttpConfig, NoReqBody (NoReqBody),
-                                          httpConfigAltManager, httpConfigCheckResponse, https,
-                                          lbsResponse, req, responseBody, responseStatusCode,
+import           Network.HTTP.Req        (GET (GET), HttpConfig, LbsResponse,
+                                          NoReqBody (NoReqBody),
+                                          httpConfigAltManager,
+                                          httpConfigCheckResponse, https,
+                                          lbsResponse, req, responseBody,
                                           runReq, (/:), (/~), (=:))
 import           Network.HTTP.Types      (statusCode)
-import           URI.ByteString          (Absolute, URIRef, parseURI, strictURIParserOptions)
+import           URI.ByteString          (Absolute, URIRef, parseURI,
+                                          strictURIParserOptions)
 
 
 noVerifyTlsManagerSettings :: Client.ManagerSettings
@@ -80,13 +90,17 @@ instance FromJSON Story where
         pure Story {..}
 
 
-test :: Int -> IO (Either StoryError Story)
+-- test :: Int -> IO (ExceptT StoryError IO Story)
 test id_ = do
   appConfigM <- mkAppConfig
   case appConfigM of
     Nothing -> error "Must set CLUBHOUSE_API_TOKEN"
     Just appConfig -> do
-      runReaderT (getStory id_) appConfig
+      valueE <- runReaderT (getStory id_) appConfig
+      value <- runExceptT valueE
+      case value of
+        Left reason  -> print $ "This failed because: " ++ show reason
+        Right result -> print $ result
 
 
 data StoryError
@@ -95,18 +109,25 @@ data StoryError
   deriving (Show)
 
 
-getStory :: Int -> ReaderT AppConfig IO (Either StoryError Story)
+getStory :: Int -> ReaderT AppConfig IO (ExceptT StoryError IO Story)
 getStory id_ = do
   config <- ask
   let chToken = configClubhouseToken config
   let url = https "api.clubhouse.io" /: "api" /: "v2" /: "stories" /~ id_
   let conf = httpConfig
-  runReq conf $ do
-    r <- req GET url NoReqBody lbsResponse ("token" =: chToken)
-    pure $
-      if responseStatusCode r == 404
-        then Left StoryNotFoundError
-        else mapLeft StoryParseError (eitherDecode $ responseBody r)
+  let response =
+        handleExceptT handle (runReq conf $ req GET url NoReqBody lbsResponse ("token" =: chToken))
+  pure $ mapExceptT yikes response
+  where
+    yikes :: IO (Either StoryError LbsResponse) -> IO (Either StoryError Story)
+    yikes r = do
+      xo <- r
+      case xo of
+        Left thing -> pure $ Left thing
+        Right response' -> pure (mapLeft StoryParseError (eitherDecode $ responseBody response'))
+
+    handle :: SomeException -> StoryError
+    handle _ = StoryParseError "Make it up"
 
 
 mapLeft :: (a -> b) -> Either a c -> Either b c

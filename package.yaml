@@ -27,6 +27,8 @@ dependencies:
 - bytestring
 - connection
 - data-default-class
+- errors
+- exceptions
 - github
 - github-webhooks
 - http-client
