@@ -1,39 +1,36 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
 module Barrier.Clubhouse where
 
-import           Barrier.Server          (AppConfig, configClubhouseToken,
-                                          mkAppConfig)
+import           Barrier.Server          (AppConfig, configClubhouseToken, mkAppConfig)
 import           Control.Error           (handleExceptT, runExceptT)
 import           Control.Exception       (SomeException)
 import           Control.Monad           (void)
 import           Control.Monad.Except    (ExceptT, mapExceptT)
 import           Control.Monad.Reader    (ReaderT, ask, runReaderT)
-import           Data.Aeson              (FromJSON, eitherDecode, parseJSON,
-                                          withObject, (.:))
+import           Data.Aeson              (FromJSON, eitherDecode, parseJSON, withObject, (.:))
 import           Data.ByteString         (ByteString)
 import           Data.Default.Class      (def)
+import           Data.Monoid             ((<>))
 import           Data.Text               (Text)
 import           Data.Text.Encoding      (encodeUtf8)
 import           GHC.Generics            (Generic)
 import           Network.Connection      (TLSSettings (TLSSettingsSimple),
                                           settingDisableCertificateValidation,
-                                          settingDisableSession,
-                                          settingUseServerName)
+                                          settingDisableSession, settingUseServerName)
 import qualified Network.HTTP.Client     as Client
 import           Network.HTTP.Client.TLS (mkManagerSettings)
 import           Network.HTTP.Req        (GET (GET), HttpConfig, LbsResponse,
-                                          NoReqBody (NoReqBody),
-                                          httpConfigAltManager,
-                                          httpConfigCheckResponse, https,
-                                          lbsResponse, req, responseBody,
-                                          runReq, (/:), (/~), (=:))
+                                          NoReqBody (NoReqBody), httpConfigAltManager,
+                                          httpConfigCheckResponse, https, lbsResponse, req,
+                                          responseBody, responseStatusCode, runReq, (/:), (/~),
+                                          (=:))
 import           Network.HTTP.Types      (statusCode)
-import           URI.ByteString          (Absolute, URIRef, parseURI,
-                                          strictURIParserOptions)
+import           URI.ByteString          (Absolute, URIRef, parseURI, strictURIParserOptions)
 
 
 noVerifyTlsManagerSettings :: Client.ManagerSettings
@@ -90,7 +87,7 @@ instance FromJSON Story where
         pure Story {..}
 
 
--- test :: Int -> IO (ExceptT StoryError IO Story)
+test :: Int -> IO ()
 test id_ = do
   appConfigM <- mkAppConfig
   case appConfigM of
@@ -99,13 +96,15 @@ test id_ = do
       valueE <- runReaderT (getStory id_) appConfig
       value <- runExceptT valueE
       case value of
-        Left reason  -> print $ "This failed because: " ++ show reason
-        Right result -> print $ result
+        Left StoryNotFoundError -> putStrLn "No matching story found."
+        Left reason             -> putStrLn $ "This failed because: " <> show reason
+        Right result            -> print result
 
 
 data StoryError
   = StoryParseError String
   | StoryNotFoundError
+  | StoryHttpError String
   deriving (Show)
 
 
@@ -117,17 +116,19 @@ getStory id_ = do
   let conf = httpConfig
   let response =
         handleExceptT handle (runReq conf $ req GET url NoReqBody lbsResponse ("token" =: chToken))
-  pure $ mapExceptT yikes response
+  pure $ mapExceptT convertResponse response
   where
-    yikes :: IO (Either StoryError LbsResponse) -> IO (Either StoryError Story)
-    yikes r = do
-      xo <- r
-      case xo of
+    convertResponse :: IO (Either StoryError LbsResponse) -> IO (Either StoryError Story)
+    convertResponse responseE = do
+      responseE >>= \case
         Left thing -> pure $ Left thing
-        Right response' -> pure (mapLeft StoryParseError (eitherDecode $ responseBody response'))
+        Right response' -> do
+          if responseStatusCode response' == (404 :: Int)
+            then pure $ Left StoryNotFoundError
+            else pure (mapLeft StoryParseError (eitherDecode $ responseBody response'))
 
     handle :: SomeException -> StoryError
-    handle _ = StoryParseError "Make it up"
+    handle e = StoryHttpError $ show e
 
 
 mapLeft :: (a -> b) -> Either a c -> Either b c

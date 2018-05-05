@@ -19,35 +19,6 @@ extra-source-files:
 # common to point users to the README.md file.
 description:         Please see the README on Github at <https://github.com/githubuser/barrier#readme>
 
-dependencies:
-- base >= 4.7 && < 5
-- Spock
-- aeson
-- async
-- bytestring
-- connection
-- data-default-class
-- errors
-- exceptions
-- github
-- github-webhooks
-- http-client
-- http-client-tls
-- http-types
-- hvect
-- mtl
-- pcre-heavy
-- req
-- safe-exceptions
-- simple-logger
-- stm
-- stm-chans
-- text
-- uri-bytestring
-- vector
-- wai
-- wai-extra
-
 library:
   source-dirs: src
   ghc-options: 
@@ -56,6 +27,33 @@ library:
     - -Wincomplete-record-updates
     - -Wmissing-import-lists
     - -Wcompat
+  dependencies:
+  - base >= 4.7 && < 5
+  - Spock
+  - aeson
+  - async
+  - bytestring
+  - connection
+  - data-default-class
+  - errors
+  - github
+  - github-webhooks
+  - http-client
+  - http-client-tls
+  - http-types
+  - hvect
+  - mtl
+  - pcre-heavy
+  - req
+  - safe-exceptions
+  - simple-logger
+  - stm
+  - stm-chans
+  - text
+  - uri-bytestring
+  - vector
+  - wai
+  - wai-extra
 
 executables:
   barrier:
@@ -66,6 +64,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
+    - base >= 4.7 && < 5
     - barrier
 
 tests:
@@ -77,4 +76,5 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
+    - base >= 4.7 && < 5
     - barrier

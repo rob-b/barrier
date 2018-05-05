@@ -7,11 +7,12 @@
 module Barrier.Events where
 
 
+import           Barrier.GitHub               (setMissingStoryStatus)
 import           Data.Aeson                   (ToJSON, Value, decode, encode, object, (.=))
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
 import           Data.ByteString.Lazy         (fromStrict, toStrict)
-import           Data.Maybe                   (catMaybes, fromMaybe, listToMaybe)
+import           Data.Maybe                   (catMaybes, listToMaybe)
 import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
 import qualified Data.Text                    as T
@@ -90,12 +91,14 @@ selectAction _                       = Nothing
 
 
 handlePullRequestAction :: PullRequestEvent -> Maybe (IO ())
-handlePullRequestAction pr =
-  let (idM :: Maybe Int) =
-        extractStoryId (whPullReqTargetRef . whPullReqHead $ evPullReqPayload pr)
-      x = mkClubhouseStoryUrl <$> idM
-      content = fromMaybe "Cannot extract story id" x
-  in Just (T.appendFile "example.txt" (content <> "\n"))
+handlePullRequestAction pr = do
+  let idM  = extractStoryId (whPullReqTargetRef . whPullReqHead $ evPullReqPayload pr)
+  case idM of
+    Nothing -> do
+      pure (setMissingStoryStatus $ evPullReqPayload pr)
+    Just _ -> do
+      let content = "We need to check if this story exists"
+      pure (T.appendFile "example.txt" (content <> "\n"))
 
 
 getBranchFromNewPr :: PullRequestEvent -> Maybe HookPullRequest
@@ -127,3 +130,14 @@ mkClubhouseStoryUrl storyID =
 
 readFixture :: FilePath -> IO ByteString
 readFixture name = B.readFile $ "fixtures/" <> name
+
+
+eventFromFixture :: IO PullRequestEvent
+eventFromFixture = do
+  f <- readFixture "pull_request_event.json"
+  let (Just event) = selectEventType "pull_request" f
+  pure $ unWrapPullRequest event
+
+
+payloadFromFixture :: IO HookPullRequest
+payloadFromFixture = evPullReqPayload <$> eventFromFixture
