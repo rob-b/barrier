@@ -11,20 +11,20 @@ import           Data.Either        (rights)
 import           Data.Text          (Text)
 import           Data.Text.Encoding (encodeUtf8)
 import           URI.ByteString     (Absolute, URIRef, authorityHost, hostBS, parseURI,
-                                     serializeURIRef', strictURIParserOptions, uriAuthority)
+                                     strictURIParserOptions, uriAuthority)
 
 
-filterByDomain :: Text -> ByteString -> [ByteString]
+filterByDomain :: Text -> ByteString -> [URIRef Absolute]
 filterByDomain s domain =
   let urls = extractUrls s
       predicate u = (hostBS <$> (authorityHost <$> uriAuthority u)) == Just domain
-  in [serializeURIRef' x | x <- urls, predicate x]
+  in [x | x <- urls, predicate x]
 
 
 extractUrls :: Text -> [URIRef Absolute]
 extractUrls t =
   let tokens = tokenise " " (encodeUtf8 t)
-  in rights $ parseURI strictURIParserOptions  <$> tokens
+  in rights $ parseURI strictURIParserOptions <$> tokens
 
 
 tokenise :: ByteString -> ByteString -> [ByteString]

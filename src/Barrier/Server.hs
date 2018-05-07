@@ -104,16 +104,15 @@ handleEvent = do
       setStatus status422
       let reason = errorObject (422 :: Int) "Unsupported event"
       json reason
-    Just wrapped -> do
-      let actionM = selectAction wrapped
-      case actionM of
+    Just wrappedEvent -> do
+      case selectAction wrappedEvent of
         Nothing -> pure ()
         Just action -> do
           queue <- appStateQueue <$> getState
           config <- appStateConfig <$> getState
           _ <- liftIO $ Q.add queue (void $ action config)
           pure ()
-      json (selectResponse wrapped)
+      json (selectResponse wrappedEvent)
 
 
 xo :: IO ()

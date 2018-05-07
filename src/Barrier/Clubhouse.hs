@@ -7,13 +7,15 @@
 module Barrier.Clubhouse where
 
 import           Barrier.Config          (AppConfig, configClubhouseToken, mkAppConfig)
-import           Control.Error           (handleExceptT, runExceptT)
+import           Control.Error           (handleExceptT, runExceptT, throwE)
 import           Control.Exception       (SomeException)
 import           Control.Monad           (void)
 import           Control.Monad.Except    (ExceptT, mapExceptT)
-import           Control.Monad.Reader    (ReaderT, ask, runReaderT)
+import           Control.Monad.Reader    (MonadReader, ask, runReaderT)
 import           Data.Aeson              (FromJSON, eitherDecode, parseJSON, withObject, (.:))
 import           Data.ByteString         (ByteString)
+import qualified Data.ByteString         as B
+import qualified Data.ByteString.Char8   as C8
 import           Data.Default.Class      (def)
 import           Data.Monoid             ((<>))
 import           Data.Text               (Text)
@@ -26,11 +28,11 @@ import qualified Network.HTTP.Client     as Client
 import           Network.HTTP.Client.TLS (mkManagerSettings)
 import           Network.HTTP.Req        (GET (GET), HttpConfig, LbsResponse,
                                           NoReqBody (NoReqBody), httpConfigAltManager,
-                                          httpConfigCheckResponse, https, lbsResponse, req,
-                                          responseBody, responseStatusCode, runReq, (/:), (/~),
-                                          (=:))
+                                          httpConfigCheckResponse, lbsResponse, parseUrlHttps, req,
+                                          responseBody, responseStatusCode, runReq, (=:))
 import           Network.HTTP.Types      (statusCode)
-import           URI.ByteString          (Absolute, URIRef, parseURI, strictURIParserOptions)
+import           URI.ByteString          (Absolute, URIParseError, URIRef, parseURI,
+                                          serializeURIRef', strictURIParserOptions)
 
 
 noVerifyTlsManagerSettings :: Client.ManagerSettings
@@ -89,16 +91,20 @@ instance FromJSON Story where
 
 test :: Int -> IO ()
 test id_ = do
-  appConfigM <- mkAppConfig
-  case appConfigM of
-    Nothing -> error "Must set CLUBHOUSE_API_TOKEN"
-    Just appConfig -> do
-      valueE <- runReaderT (getStory id_) appConfig
-      value <- runExceptT valueE
-      case value of
-        Left StoryNotFoundError -> putStrLn "No matching story found."
-        Left reason             -> putStrLn $ "This failed because: " <> show reason
-        Right result            -> print result
+  let urlE = mkClubhouseStoryUrl id_
+  case urlE of
+    Left reason -> error $ show reason
+    Right url -> do
+      appConfigM <- mkAppConfig
+      case appConfigM of
+        Nothing -> error "Must set CLUBHOUSE_API_TOKEN"
+        Just appConfig -> do
+          valueE <- runReaderT (getStory url) appConfig
+          value <- runExceptT valueE
+          case value of
+            Left StoryNotFoundError -> putStrLn "No matching story found."
+            Left reason             -> putStrLn $ "This failed because: " <> show reason
+            Right result            -> print result
 
 
 data StoryError
@@ -108,15 +114,18 @@ data StoryError
   deriving (Show)
 
 
-getStory :: Int -> ReaderT AppConfig IO (ExceptT StoryError IO Story)
-getStory id_ = do
+getStory :: MonadReader AppConfig m => URIRef Absolute -> m (ExceptT StoryError IO Story)
+getStory url = do
   config <- ask
-  let chToken = decodeUtf8 $ configClubhouseToken config
-  let url = https "api.clubhouse.io" /: "api" /: "v2" /: "stories" /~ id_
-  let conf = httpConfig
-  let response =
-        handleExceptT handle (runReq conf $ req GET url NoReqBody lbsResponse ("token" =: chToken))
-  pure $ mapExceptT convertResponse response
+  case parseUrlHttps $ serializeURIRef' url of
+    Nothing ->
+      pure . throwE . StoryParseError $ "Could not parse url: " <> show (serializeURIRef' url)
+    Just (url', option) -> do
+      let chToken = decodeUtf8 $ configClubhouseToken config
+      let option' = option <> ("token" =: chToken)
+      let action = runReq httpConfig $ req GET url' NoReqBody lbsResponse option'
+      let response = handleExceptT handle action
+      pure $ mapExceptT convertResponse response
   where
     convertResponse :: IO (Either StoryError LbsResponse) -> IO (Either StoryError Story)
     convertResponse responseE = do
@@ -134,3 +143,9 @@ getStory id_ = do
 mapLeft :: (a -> b) -> Either a c -> Either b c
 mapLeft f (Left x)  = Left $ f x
 mapLeft _ (Right x) = Right x
+
+
+mkClubhouseStoryUrl :: Show a => a -> Either URIParseError (URIRef Absolute)
+mkClubhouseStoryUrl storyID =
+  parseURI strictURIParserOptions $
+  B.intercalate "" ["https://api.clubhouse.io/api/v2/stories/", C8.pack $ show storyID]

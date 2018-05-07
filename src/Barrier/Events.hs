@@ -8,17 +8,18 @@ module Barrier.Events where
 
 
 import           Barrier.Check                (filterByDomain)
-import           Barrier.Config               (AppConfig)
+import           Barrier.Clubhouse            (mkClubhouseStoryUrl)
+import           Barrier.Config               (AppConfig, configClubhouseToken)
 import           Barrier.GitHub               (setMissingStoryStatus)
+import           Control.Error                (hush)
+import           Control.Monad                (forM_)
 import           Data.Aeson                   (ToJSON, Value, decode, encode, object, (.=))
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
 import           Data.ByteString.Lazy         (fromStrict, toStrict)
-import           Data.Maybe                   (catMaybes, isNothing, listToMaybe)
+import           Data.Maybe                   (catMaybes, listToMaybe, maybeToList)
 import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
-import qualified Data.Text                    as T
-import qualified Data.Text.IO                 as T
 import           Data.Text.Read               (decimal)
 import qualified Data.Vector                  as V
 import           GitHub.Data.Webhooks         (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
@@ -28,6 +29,7 @@ import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, PullRequestEve
 import           GitHub.Data.Webhooks.Payload (HookPullRequest, whIssueCommentBody, whPullReqBody,
                                                whPullReqHead, whPullReqTargetRef)
 import           Text.Regex.PCRE.Heavy        (re, scan)
+import           URI.ByteString               (Absolute, URIRef)
 
 
 data WrappedEvent
@@ -94,17 +96,23 @@ selectAction _                       = Nothing
 handlePullRequestAction :: PullRequestEvent -> Maybe (AppConfig -> IO ())
 handlePullRequestAction pr = do
   payload <- getPayLoadFromPr pr
-  let (idM :: Maybe Int) = extractStoryId . whPullReqTargetRef . whPullReqHead $ payload
-  let links = checkBody payload
-  if isNothing idM && null links
+  let urlM =
+        (hush . mkClubhouseStoryUrl) =<<
+        (extractStoryId . whPullReqTargetRef . whPullReqHead $ payload)
+  let links = extractLinks payload <> maybeToList urlM
+  if null links
     then pure (`setMissingStoryStatus` payload)
-    else do
-      let content = "We need to check if this story exists"
-      pure (const (T.appendFile "example.txt" (content <> "\n")))
+    else pure (checkerAndUpdater payload links)
 
 
-checkBody :: HookPullRequest -> [ByteString]
-checkBody pr = filterByDomain (whPullReqBody pr) "clubhouse"
+checkerAndUpdater :: (Show a, Foldable t) => p -> t a -> AppConfig -> IO ()
+checkerAndUpdater _payload links config = forM_ links $ \link -> do
+  let _chToken = configClubhouseToken config
+  print link
+
+
+extractLinks :: HookPullRequest -> [URIRef Absolute]
+extractLinks pr = filterByDomain (whPullReqBody pr) "clubhouse"
 
 
 getPayLoadFromPr :: PullRequestEvent -> Maybe HookPullRequest
@@ -114,7 +122,7 @@ getPayLoadFromPr pr@(evPullReqAction -> PullRequestReopenedAction) = Just $ evPu
 getPayLoadFromPr _                                                 = Nothing
 
 
-extractStoryId :: Integral a => Text -> Maybe a
+extractStoryId :: Text -> Maybe Int
 extractStoryId value = extract ((listToMaybe . scan regex) value) >>= readish
   where
     regex = [re|^.*(ch(\d+)).*$|]
@@ -124,16 +132,6 @@ extractStoryId value = extract ((listToMaybe . scan regex) value) >>= readish
 
 readish :: Integral a => Text -> Maybe a
 readish s = either (const Nothing) (Just . fst) (decimal s)
-
-
-mkClubhouseStoryUrl :: Show a => a -> Text
-mkClubhouseStoryUrl storyID =
-  T.intercalate
-    ""
-    [ "https://api.clubhouse.io/api/v2/stories/"
-    , T.pack (show storyID)
-    , "?token=$CLUBHOUSE_API_TOKEN"
-    ]
 
 
 readFixture :: FilePath -> IO ByteString
