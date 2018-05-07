@@ -8,6 +8,7 @@
 module Barrier.Server
    where
 
+import           Barrier.Config                       (AppConfig, configGitHubToken, mkAppConfig)
 import           Barrier.Events                       (selectAction, selectEventType,
                                                        selectResponse)
 import qualified Barrier.Queue                        as Q
@@ -21,14 +22,12 @@ import           Control.Monad.STM                    (atomically)
 import           Data.Aeson                           (ToJSON, Value, object, (.=))
 import           Data.ByteString                      (ByteString)
 import           Data.HVect                           (HVect ((:&:), HNil))
-import qualified Data.Text                            as T
 import           Data.Text.Encoding                   (decodeUtf8)
 import qualified Data.Vector                          as V
 import           GitHub.Data.Webhooks.Secure          (isSecurePayload)
 import           Network.HTTP.Types.Status            (Status (Status), status401, status422)
 import           Network.Wai                          (Middleware)
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import           System.Environment                   (lookupEnv)
 import           Web.Spock                            (ActionCtxT, SpockActionCtx, SpockM, body,
                                                        get, getContext, getState, header, json,
                                                        middleware, post, prehook, rawHeader, root,
@@ -41,12 +40,6 @@ logger :: Middleware
 logger = logStdoutDev
 
 data SignedRequest = SignedRequest
-
-
-data AppConfig = AppConfig
-  { configGitHubToken    :: String
-  , configClubhouseToken :: String
-  } deriving (Show)
 
 data AppState = AppState
   { appStateQueue  :: TBMQueue (IO ())
@@ -69,7 +62,7 @@ authHook = do
   appState <- getState
   payload <- body
   signature <- header "X-Hub-Signature"
-  if isSecurePayload (T.pack (configGitHubToken (appStateConfig appState))) signature payload
+  if isSecurePayload (decodeUtf8 (configGitHubToken (appStateConfig appState))) signature payload
     then return (SignedRequest :&: oldCtx)
     else do
       setStatus status401
@@ -117,7 +110,8 @@ handleEvent = do
         Nothing -> pure ()
         Just action -> do
           queue <- appStateQueue <$> getState
-          _ <- liftIO $ Q.add queue (void action)
+          config <- appStateConfig <$> getState
+          _ <- liftIO $ Q.add queue (void $ action config)
           pure ()
       json (selectResponse wrapped)
 
@@ -126,13 +120,6 @@ xo :: IO ()
 xo = do
   _ <- appendFile "example.txt" "this is my content\n"
   pure ()
-
-
-mkAppConfig :: IO (Maybe AppConfig)
-mkAppConfig = do
-    chTokenM <- lookupEnv "CLUBHOUSE_API_TOKEN"
-    ghTokenM <- lookupEnv "GITHUB_KEY"
-    pure $ fmap AppConfig ghTokenM <*> chTokenM
 
 
 run :: IO ()

@@ -6,7 +6,7 @@
 
 module Barrier.Clubhouse where
 
-import           Barrier.Server          (AppConfig, configClubhouseToken, mkAppConfig)
+import           Barrier.Config          (AppConfig, configClubhouseToken, mkAppConfig)
 import           Control.Error           (handleExceptT, runExceptT)
 import           Control.Exception       (SomeException)
 import           Control.Monad           (void)
@@ -17,7 +17,7 @@ import           Data.ByteString         (ByteString)
 import           Data.Default.Class      (def)
 import           Data.Monoid             ((<>))
 import           Data.Text               (Text)
-import           Data.Text.Encoding      (encodeUtf8)
+import           Data.Text.Encoding      (decodeUtf8, encodeUtf8)
 import           GHC.Generics            (Generic)
 import           Network.Connection      (TLSSettings (TLSSettingsSimple),
                                           settingDisableCertificateValidation,
@@ -111,7 +111,7 @@ data StoryError
 getStory :: Int -> ReaderT AppConfig IO (ExceptT StoryError IO Story)
 getStory id_ = do
   config <- ask
-  let chToken = configClubhouseToken config
+  let chToken = decodeUtf8 $ configClubhouseToken config
   let url = https "api.clubhouse.io" /: "api" /: "v2" /: "stories" /~ id_
   let conf = httpConfig
   let response =

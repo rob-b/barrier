@@ -7,12 +7,14 @@
 module Barrier.Events where
 
 
+import           Barrier.Check                (filterByDomain)
+import           Barrier.Config               (AppConfig)
 import           Barrier.GitHub               (setMissingStoryStatus)
 import           Data.Aeson                   (ToJSON, Value, decode, encode, object, (.=))
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
 import           Data.ByteString.Lazy         (fromStrict, toStrict)
-import           Data.Maybe                   (catMaybes, listToMaybe)
+import           Data.Maybe                   (catMaybes, isNothing, listToMaybe)
 import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
 import qualified Data.Text                    as T
@@ -20,12 +22,11 @@ import qualified Data.Text.IO                 as T
 import           Data.Text.Read               (decimal)
 import qualified Data.Vector                  as V
 import           GitHub.Data.Webhooks         (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
-import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, PullRequestEvent,
-                                               PullRequestEventAction (PullRequestOpenedAction),
+import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, PullRequestEvent, PullRequestEventAction (PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
                                                evIssueCommentPayload, evPullReqAction,
                                                evPullReqPayload)
-import           GitHub.Data.Webhooks.Payload (HookPullRequest, whIssueCommentBody, whPullReqHead,
-                                               whPullReqTargetRef)
+import           GitHub.Data.Webhooks.Payload (HookPullRequest, whIssueCommentBody, whPullReqBody,
+                                               whPullReqHead, whPullReqTargetRef)
 import           Text.Regex.PCRE.Heavy        (re, scan)
 
 
@@ -80,30 +81,37 @@ handleCommentEvent event =
 handlePullRequestEvent :: PullRequestEvent -> Value
 handlePullRequestEvent event =
   let inner = V.singleton $ object ["base" .= (ref :: Text)]
-      ref = maybe "dunno" (whPullReqTargetRef . whPullReqHead) branch
-      branch = getBranchFromNewPr event
+      ref = maybe "dunno" (whPullReqTargetRef . whPullReqHead) payload
+      payload = getPayLoadFromPr event
   in object ["data" .= inner]
 
 
-selectAction :: WrappedEvent -> Maybe (IO ())
+selectAction :: WrappedEvent -> Maybe (AppConfig -> IO ())
 selectAction (WrappedPullRequest pr) = handlePullRequestAction pr
 selectAction _                       = Nothing
 
 
-handlePullRequestAction :: PullRequestEvent -> Maybe (IO ())
+handlePullRequestAction :: PullRequestEvent -> Maybe (AppConfig -> IO ())
 handlePullRequestAction pr = do
-  let idM  = extractStoryId (whPullReqTargetRef . whPullReqHead $ evPullReqPayload pr)
-  case idM of
-    Nothing -> do
-      pure (setMissingStoryStatus $ evPullReqPayload pr)
-    Just _ -> do
+  payload <- getPayLoadFromPr pr
+  let (idM :: Maybe Int) = extractStoryId . whPullReqTargetRef . whPullReqHead $ payload
+  let links = checkBody payload
+  if isNothing idM && null links
+    then pure (`setMissingStoryStatus` payload)
+    else do
       let content = "We need to check if this story exists"
-      pure (T.appendFile "example.txt" (content <> "\n"))
+      pure (const (T.appendFile "example.txt" (content <> "\n")))
 
 
-getBranchFromNewPr :: PullRequestEvent -> Maybe HookPullRequest
-getBranchFromNewPr pr@(evPullReqAction -> PullRequestOpenedAction) = Just $ evPullReqPayload pr
-getBranchFromNewPr _                                               = Nothing
+checkBody :: HookPullRequest -> [ByteString]
+checkBody pr = filterByDomain (whPullReqBody pr) "clubhouse"
+
+
+getPayLoadFromPr :: PullRequestEvent -> Maybe HookPullRequest
+getPayLoadFromPr pr@(evPullReqAction -> PullRequestOpenedAction)   = Just $ evPullReqPayload pr
+getPayLoadFromPr pr@(evPullReqAction -> PullRequestEditedAction)   = Just $ evPullReqPayload pr
+getPayLoadFromPr pr@(evPullReqAction -> PullRequestReopenedAction) = Just $ evPullReqPayload pr
+getPayLoadFromPr _                                                 = Nothing
 
 
 extractStoryId :: Integral a => Text -> Maybe a
