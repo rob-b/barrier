@@ -8,26 +8,34 @@ module Barrier.Events where
 
 
 import           Barrier.Check                (filterByDomain)
-import           Barrier.Clubhouse            (mkClubhouseStoryUrl)
+import           Barrier.Clubhouse            (getStory, mkClubhouseStoryUrl)
 import           Barrier.Config               (AppConfig, configClubhouseToken)
 import           Barrier.GitHub               (setMissingStoryStatus)
 import           Control.Error                (hush)
 import           Control.Monad                (forM_)
-import           Data.Aeson                   (ToJSON, Value, decode, encode, object, (.=))
+import           Control.Monad.Reader         (runReaderT)
+import           Data.Aeson                   (ToJSON, Value, decode, encode,
+                                               object, (.=))
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
 import           Data.ByteString.Lazy         (fromStrict, toStrict)
-import           Data.Maybe                   (catMaybes, listToMaybe, maybeToList)
+import           Data.Maybe                   (catMaybes, fromMaybe,
+                                               listToMaybe, maybeToList)
 import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
 import           Data.Text.Read               (decimal)
 import qualified Data.Vector                  as V
 import           GitHub.Data.Webhooks         (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
-import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, PullRequestEvent, PullRequestEventAction (PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
-                                               evIssueCommentPayload, evPullReqAction,
+import           GitHub.Data.Webhooks.Events  (IssueCommentEvent,
+                                               PullRequestEvent,
+                                               PullRequestEventAction (PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
+                                               evIssueCommentPayload,
+                                               evPullReqAction,
                                                evPullReqPayload)
-import           GitHub.Data.Webhooks.Payload (HookPullRequest, whIssueCommentBody, whPullReqBody,
-                                               whPullReqHead, whPullReqTargetRef)
+import           GitHub.Data.Webhooks.Payload (HookPullRequest,
+                                               whIssueCommentBody,
+                                               whPullReqBody, whPullReqHead,
+                                               whPullReqTargetRef)
 import           Text.Regex.PCRE.Heavy        (re, scan)
 import           URI.ByteString               (Absolute, URIRef)
 
@@ -102,13 +110,14 @@ handlePullRequestAction pr = do
   let links = extractLinks payload <> maybeToList urlM
   if null links
     then pure (`setMissingStoryStatus` payload)
-    else pure (checkerAndUpdater payload links)
+    else pure (\config -> checkerAndUpdater config payload links)
 
 
-checkerAndUpdater :: (Show a, Foldable t) => p -> t a -> AppConfig -> IO ()
-checkerAndUpdater _payload links config = forM_ links $ \link -> do
+checkerAndUpdater :: Foldable t => AppConfig -> HookPullRequest -> t (URIRef Absolute) -> IO ()
+checkerAndUpdater config _payload links = forM_ links $ \link -> do
   let _chToken = configClubhouseToken config
-  print link
+  xx <- runReaderT (getStory link) config
+  print $ fromMaybe "ok" xx
 
 
 extractLinks :: HookPullRequest -> [URIRef Absolute]
