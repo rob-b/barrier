@@ -6,13 +6,17 @@
 
 module Barrier.Clubhouse where
 
-import           Barrier.Config          (AppConfig, configClubhouseToken, mkAppConfig)
-import           Control.Error           (handleExceptT, runExceptT, throwE)
+import           Barrier.Config          (AppConfig, configClubhouseToken,
+                                          mkAppConfig)
+import           Control.Error           (runExceptT, throwE)
 import           Control.Exception       (SomeException)
+import           Control.Exception.Safe  (Exception, MonadCatch, fromException,
+                                          tryJust)
 import           Control.Monad           (void)
-import           Control.Monad.Except    (ExceptT, mapExceptT)
+import           Control.Monad.Except    (ExceptT (ExceptT), mapExceptT)
 import           Control.Monad.Reader    (MonadReader, ask, runReaderT)
-import           Data.Aeson              (FromJSON, eitherDecode, parseJSON, withObject, (.:))
+import           Data.Aeson              (FromJSON, eitherDecode, parseJSON,
+                                          withObject, (.:))
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as B
 import qualified Data.ByteString.Char8   as C8
@@ -23,16 +27,21 @@ import           Data.Text.Encoding      (decodeUtf8, encodeUtf8)
 import           GHC.Generics            (Generic)
 import           Network.Connection      (TLSSettings (TLSSettingsSimple),
                                           settingDisableCertificateValidation,
-                                          settingDisableSession, settingUseServerName)
+                                          settingDisableSession,
+                                          settingUseServerName)
 import qualified Network.HTTP.Client     as Client
 import           Network.HTTP.Client.TLS (mkManagerSettings)
-import           Network.HTTP.Req        (GET (GET), HttpConfig, LbsResponse,
-                                          NoReqBody (NoReqBody), httpConfigAltManager,
-                                          httpConfigCheckResponse, lbsResponse, parseUrlHttps, req,
-                                          responseBody, responseStatusCode, runReq, (=:))
+import           Network.HTTP.Req        (GET (GET), HttpConfig,
+                                          HttpException (VanillaHttpException),
+                                          LbsResponse, NoReqBody (NoReqBody),
+                                          httpConfigAltManager,
+                                          httpConfigCheckResponse, lbsResponse,
+                                          parseUrlHttps, req, responseBody,
+                                          responseStatusCode, runReq, (=:))
 import           Network.HTTP.Types      (statusCode)
-import           URI.ByteString          (Absolute, URIParseError, URIRef, parseURI,
-                                          serializeURIRef', strictURIParserOptions)
+import           URI.ByteString          (Absolute, URIParseError, URIRef,
+                                          parseURI, serializeURIRef',
+                                          strictURIParserOptions)
 
 
 noVerifyTlsManagerSettings :: Client.ManagerSettings
@@ -124,7 +133,7 @@ getStory url = do
       let chToken = decodeUtf8 $ configClubhouseToken config
       let option' = option <> ("token" =: chToken)
       let action = runReq httpConfig $ req GET url' NoReqBody lbsResponse option'
-      let response = handleExceptT handle action
+      let response = handleExceptT' handle action
       pure $ mapExceptT convertResponse response
   where
     convertResponse :: IO (Either StoryError LbsResponse) -> IO (Either StoryError Story)
@@ -136,8 +145,16 @@ getStory url = do
             then pure $ Left StoryNotFoundError
             else pure (mapLeft StoryParseError (eitherDecode $ responseBody response'))
 
-    handle :: SomeException -> StoryError
-    handle e = StoryHttpError $ show e
+
+handleExceptT' :: (Exception e, Functor m, MonadCatch m) => (e -> Maybe x) -> m a -> ExceptT x m a
+handleExceptT' handler = ExceptT . tryJust handler
+
+
+handle :: SomeException -> Maybe StoryError
+handle e =
+  case fromException e of
+    Just (VanillaHttpException _) -> pure . StoryHttpError $ show e
+    _                             -> Nothing
 
 
 mapLeft :: (a -> b) -> Either a c -> Either b c

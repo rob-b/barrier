@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE QuasiQuotes         #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -11,31 +12,24 @@ import           Barrier.Check                (filterByDomain)
 import           Barrier.Clubhouse            (getStory, mkClubhouseStoryUrl)
 import           Barrier.Config               (AppConfig, configClubhouseToken)
 import           Barrier.GitHub               (setMissingStoryStatus)
-import           Control.Error                (hush)
+import           Control.Error                (hush, runExceptT)
 import           Control.Monad                (forM_)
 import           Control.Monad.Reader         (runReaderT)
-import           Data.Aeson                   (ToJSON, Value, decode, encode,
-                                               object, (.=))
+import           Data.Aeson                   (ToJSON, Value, decode, encode, object, (.=))
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
 import           Data.ByteString.Lazy         (fromStrict, toStrict)
-import           Data.Maybe                   (catMaybes, fromMaybe,
-                                               listToMaybe, maybeToList)
+import           Data.Maybe                   (catMaybes, listToMaybe, maybeToList)
 import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
 import           Data.Text.Read               (decimal)
 import qualified Data.Vector                  as V
 import           GitHub.Data.Webhooks         (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
-import           GitHub.Data.Webhooks.Events  (IssueCommentEvent,
-                                               PullRequestEvent,
-                                               PullRequestEventAction (PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
-                                               evIssueCommentPayload,
-                                               evPullReqAction,
+import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, PullRequestEvent, PullRequestEventAction (PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
+                                               evIssueCommentPayload, evPullReqAction,
                                                evPullReqPayload)
-import           GitHub.Data.Webhooks.Payload (HookPullRequest,
-                                               whIssueCommentBody,
-                                               whPullReqBody, whPullReqHead,
-                                               whPullReqTargetRef)
+import           GitHub.Data.Webhooks.Payload (HookPullRequest, whIssueCommentBody, whPullReqBody,
+                                               whPullReqHead, whPullReqTargetRef)
 import           Text.Regex.PCRE.Heavy        (re, scan)
 import           URI.ByteString               (Absolute, URIRef)
 
@@ -117,7 +111,9 @@ checkerAndUpdater :: Foldable t => AppConfig -> HookPullRequest -> t (URIRef Abs
 checkerAndUpdater config _payload links = forM_ links $ \link -> do
   let _chToken = configClubhouseToken config
   xx <- runReaderT (getStory link) config
-  print $ fromMaybe "ok" xx
+  runExceptT xx >>= \case
+    Left reason -> print reason
+    Right value -> print value
 
 
 extractLinks :: HookPullRequest -> [URIRef Absolute]
