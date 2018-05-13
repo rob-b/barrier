@@ -8,7 +8,8 @@
 module Barrier.Server
    where
 
-import           Barrier.Config                       (AppConfig, configGitHubSecret, mkAppConfig)
+import           Barrier.Config                       (AppConfig, configGitHubSecret, lookupEnv,
+                                                       mkAppConfig)
 import           Barrier.Events                       (selectAction, selectEventType,
                                                        selectResponse)
 import qualified Barrier.Queue                        as Q
@@ -135,9 +136,10 @@ run = withGlobalLogging (LogConfig (Just "logfile.txt") False) (bracket setup sh
       case appConfigM of
         Nothing -> putStrLn "You must set GITHUB_KEY and CLUBHOUSE_API_TOKEN"
         Just appConfig -> do
+          port <- maybe 9000 read <$> lookupEnv "PORT"
           let appState = AppState queue appConfig
           spockCfg <- barrierConfig <$> defaultSpockCfg () PCNoDatabase appState
-          runSpock 9000 (spock spockCfg $ middleware logger >> app)
+          runSpock port (spock spockCfg $ middleware logger >> app)
     shutDown :: (TBMQueue a, Async b) -> IO b
     shutDown (queue, worker) = do
       atomically $ closeTBMQueue queue
