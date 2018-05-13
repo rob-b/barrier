@@ -2,6 +2,8 @@ module Barrier.Config where
 
 import           Data.ByteString    (ByteString)
 import           Data.String        (IsString, fromString)
+import           Data.Text          (Text)
+import           Data.Text.Read     (decimal)
 import qualified System.Environment as Env
 
 
@@ -26,3 +28,7 @@ mkAppConfig = do
   ghTokenM <- lookupEnv "GITHUB_API_TOKEN"
   ghSecretM <- lookupEnv "GITHUB_KEY"
   pure $ fmap AppConfig ghTokenM <*> chTokenM <*> ghSecretM
+
+
+readish :: Integral a => Text -> Maybe a
+readish s = either (const Nothing) (Just . fst) (decimal s)

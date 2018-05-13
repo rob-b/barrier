@@ -42,6 +42,7 @@ library:
   - http-client-tls
   - http-types
   - hvect
+  - microlens-platform
   - mtl
   - pcre-heavy
   - req

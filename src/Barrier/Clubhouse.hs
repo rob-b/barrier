@@ -6,42 +6,39 @@
 
 module Barrier.Clubhouse where
 
-import           Barrier.Config          (AppConfig, configClubhouseToken,
-                                          mkAppConfig)
+import           Barrier.Config          (AppConfig, configClubhouseToken, mkAppConfig, readish)
 import           Control.Error           (runExceptT, throwE)
 import           Control.Exception       (SomeException)
-import           Control.Exception.Safe  (Exception, MonadCatch, fromException,
-                                          tryJust)
+import           Control.Exception.Safe  (Exception, MonadCatch, fromException, tryJust)
+import           Control.Logger.Simple   (logDebug)
 import           Control.Monad           (void)
 import           Control.Monad.Except    (ExceptT (ExceptT), mapExceptT)
 import           Control.Monad.Reader    (MonadReader, ask, runReaderT)
-import           Data.Aeson              (FromJSON, eitherDecode, parseJSON,
-                                          withObject, (.:))
+import           Data.Aeson              (FromJSON, eitherDecode, parseJSON, withObject, (.:))
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as B
+import qualified Data.ByteString.Char8   as C
 import qualified Data.ByteString.Char8   as C8
+import           Data.ByteString.Lazy    (toStrict)
 import           Data.Default.Class      (def)
 import           Data.Monoid             ((<>))
 import           Data.Text               (Text)
 import           Data.Text.Encoding      (decodeUtf8, encodeUtf8)
 import           GHC.Generics            (Generic)
+import           Lens.Micro.Platform     ((^.))
 import           Network.Connection      (TLSSettings (TLSSettingsSimple),
                                           settingDisableCertificateValidation,
-                                          settingDisableSession,
-                                          settingUseServerName)
+                                          settingDisableSession, settingUseServerName)
 import qualified Network.HTTP.Client     as Client
 import           Network.HTTP.Client.TLS (mkManagerSettings)
 import           Network.HTTP.Req        (GET (GET), HttpConfig,
-                                          HttpException (VanillaHttpException),
-                                          LbsResponse, NoReqBody (NoReqBody),
-                                          httpConfigAltManager,
-                                          httpConfigCheckResponse, lbsResponse,
-                                          parseUrlHttps, req, responseBody,
-                                          responseStatusCode, runReq, (=:))
+                                          HttpException (VanillaHttpException), LbsResponse,
+                                          NoReqBody (NoReqBody), httpConfigAltManager,
+                                          httpConfigCheckResponse, lbsResponse, parseUrlHttps, req,
+                                          responseBody, responseStatusCode, runReq, (=:))
 import           Network.HTTP.Types      (statusCode)
-import           URI.ByteString          (Absolute, URIParseError, URIRef,
-                                          parseURI, serializeURIRef',
-                                          strictURIParserOptions)
+import           URI.ByteString          (Absolute, URIParseError (OtherError), URIRef, parseURI,
+                                          pathL, serializeURIRef', strictURIParserOptions)
 
 
 noVerifyTlsManagerSettings :: Client.ManagerSettings
@@ -120,6 +117,7 @@ data StoryError
   = StoryParseError String
   | StoryNotFoundError
   | StoryHttpError String
+  | StoryInvalidLinkError String
   deriving (Show)
 
 
@@ -143,7 +141,8 @@ getStory url = do
         Right response' -> do
           if responseStatusCode response' == (404 :: Int)
             then pure $ Left StoryNotFoundError
-            else pure (mapLeft StoryParseError (eitherDecode $ responseBody response'))
+            else logDebug (decodeUtf8 (toStrict (responseBody response'))) >>
+                 pure (mapLeft StoryParseError (eitherDecode $ responseBody response'))
 
 
 handleExceptT' :: (Exception e, Functor m, MonadCatch m) => (e -> Maybe x) -> m a -> ExceptT x m a
@@ -166,3 +165,24 @@ mkClubhouseStoryUrl :: Show a => a -> Either URIParseError (URIRef Absolute)
 mkClubhouseStoryUrl storyID =
   parseURI strictURIParserOptions $
   B.intercalate "" ["https://api.clubhouse.io/api/v2/stories/", C8.pack $ show storyID]
+
+
+sampleUrl :: ByteString
+sampleUrl = "https://app.clubhouse.io/zerodeposit/story/2944/create-contact-form-using-netlify"
+
+
+webappUrlToApiUrl :: ByteString -> Either URIParseError (URIRef Absolute)
+webappUrlToApiUrl url =
+  case parseURI strictURIParserOptions url of
+    Left reason -> Left reason
+    Right url'  -> webappURIRefToApiUrl url'
+
+
+webappURIRefToApiUrl :: URIRef Absolute -> Either URIParseError (URIRef Absolute)
+webappURIRefToApiUrl url = response . getId $ C.split '/' (url ^. pathL)
+  where
+    getId (_:_:_:x:_) = readish (decodeUtf8 x)
+    getId _           = Nothing
+    response :: Maybe Integer -> Either URIParseError (URIRef Absolute)
+    response Nothing    = Left $ OtherError ("Could not find story id in " <> show url)
+    response (Just sid) = mkClubhouseStoryUrl sid

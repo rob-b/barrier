@@ -8,7 +8,7 @@
 module Barrier.Server
    where
 
-import           Barrier.Config                       (AppConfig, configGitHubToken, mkAppConfig)
+import           Barrier.Config                       (AppConfig, configGitHubSecret, mkAppConfig)
 import           Barrier.Events                       (selectAction, selectEventType,
                                                        selectResponse)
 import qualified Barrier.Queue                        as Q
@@ -62,7 +62,7 @@ authHook = do
   appState <- getState
   payload <- body
   signature <- header "X-Hub-Signature"
-  if isSecurePayload (decodeUtf8 (configGitHubToken (appStateConfig appState))) signature payload
+  if isSecurePayload (decodeUtf8 (configGitHubSecret (appStateConfig appState))) signature payload
     then return (SignedRequest :&: oldCtx)
     else do
       setStatus status401

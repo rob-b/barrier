@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE QuasiQuotes         #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -7,23 +6,26 @@
 
 module Barrier.Events where
 
-
 import           Barrier.Check                (filterByDomain)
-import           Barrier.Clubhouse            (getStory, mkClubhouseStoryUrl)
-import           Barrier.Config               (AppConfig, configClubhouseToken)
-import           Barrier.GitHub               (setMissingStoryStatus)
-import           Control.Error                (hush, runExceptT)
-import           Control.Monad                (forM_)
+import           Barrier.Clubhouse            (StoryError (StoryInvalidLinkError), getStory,
+                                               mkClubhouseStoryUrl)
+import           Barrier.Config               (AppConfig, readish)
+import           Barrier.GitHub               (setHasStoryStatus, setMissingStoryStatus)
+import           Control.Error                (runExceptT, throwE)
+import           Control.Logger.Simple        (logDebug)
+import           Control.Monad                (mapM)
 import           Control.Monad.Reader         (runReaderT)
 import           Data.Aeson                   (ToJSON, Value, decode, encode, object, (.=))
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
 import           Data.ByteString.Lazy         (fromStrict, toStrict)
-import           Data.Maybe                   (catMaybes, listToMaybe, maybeToList)
+import           Data.Either                  (partitionEithers)
+import           Data.Maybe                   (catMaybes, listToMaybe)
 import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
-import           Data.Text.Read               (decimal)
+import qualified Data.Text                    as T
 import qualified Data.Vector                  as V
+import           Debug.Trace                  (trace, traceShow)
 import           GitHub.Data.Webhooks         (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
 import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, PullRequestEvent, PullRequestEventAction (PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
                                                evIssueCommentPayload, evPullReqAction,
@@ -31,7 +33,7 @@ import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, PullRequestEve
 import           GitHub.Data.Webhooks.Payload (HookPullRequest, whIssueCommentBody, whPullReqBody,
                                                whPullReqHead, whPullReqTargetRef)
 import           Text.Regex.PCRE.Heavy        (re, scan)
-import           URI.ByteString               (Absolute, URIRef)
+import           URI.ByteString               (Absolute, URIParseError (OtherError), URIRef)
 
 
 data WrappedEvent
@@ -98,26 +100,42 @@ selectAction _                       = Nothing
 handlePullRequestAction :: PullRequestEvent -> Maybe (AppConfig -> IO ())
 handlePullRequestAction pr = do
   payload <- getPayLoadFromPr pr
-  let urlM =
-        (hush . mkClubhouseStoryUrl) =<<
-        (extractStoryId . whPullReqTargetRef . whPullReqHead $ payload)
-  let links = extractLinks payload <> maybeToList urlM
-  if null links
+  let targetRef = whPullReqTargetRef . whPullReqHead $ payload
+  let storyURI = convert (extractStoryId targetRef) (T.unpack targetRef)
+  let links = [storyURI] <> extractLinks payload
+  if traceShow links (null links)
     then pure (`setMissingStoryStatus` payload)
-    else pure (\config -> checkerAndUpdater config payload links)
+    else pure (\config -> trace "checking and updating" (checkerAndUpdater config payload links))
+  where
+    convert
+      :: Show a
+      => Maybe a -> String -> Either URIParseError (URIRef Absolute)
+    convert Nothing ref =
+      Left $ OtherError ("Could not determine story id from branch name: " <> ref)
+    convert (Just x) _ = mkClubhouseStoryUrl x
 
 
-checkerAndUpdater :: Foldable t => AppConfig -> HookPullRequest -> t (URIRef Absolute) -> IO ()
-checkerAndUpdater config _payload links = forM_ links $ \link -> do
-  let _chToken = configClubhouseToken config
-  xx <- runReaderT (getStory link) config
-  runExceptT xx >>= \case
-    Left reason -> print reason
-    Right value -> print value
+checkerAndUpdater :: AppConfig
+                  -> HookPullRequest
+                  -> [Either URIParseError (URIRef Absolute)]
+                  -> IO ()
+checkerAndUpdater config payload links = do
+  responses <- mapM doThingWithLink links
+  (errors, stories) <- fmap partitionEithers (traverse runExceptT responses)
+  mapM_ (logDebug . T.pack . show) errors
+  selectStatus stories
+  where
+    selectStatus (story:_) = setHasStoryStatus config payload story
+    selectStatus []        = setMissingStoryStatus config payload
+
+    doThingWithLink (Left reason) = pure $ throwE $ StoryInvalidLinkError (show reason)
+    doThingWithLink (Right link)  = linkDebug link >> runReaderT (getStory link) config
+
+    linkDebug link = logDebug ("Checking link: " <> T.pack (show link))
 
 
-extractLinks :: HookPullRequest -> [URIRef Absolute]
-extractLinks pr = filterByDomain (whPullReqBody pr) "clubhouse"
+extractLinks :: HookPullRequest -> [Either URIParseError (URIRef Absolute)]
+extractLinks pr = filterByDomain (whPullReqBody pr) "app.clubhouse.io"
 
 
 getPayLoadFromPr :: PullRequestEvent -> Maybe HookPullRequest
@@ -133,10 +151,6 @@ extractStoryId value = extract ((listToMaybe . scan regex) value) >>= readish
     regex = [re|^.*(ch(\d+)).*$|]
     extract (Just (_, _:ref:_)) = Just ref
     extract _                   = Nothing
-
-
-readish :: Integral a => Text -> Maybe a
-readish s = either (const Nothing) (Just . fst) (decimal s)
 
 
 readFixture :: FilePath -> IO ByteString

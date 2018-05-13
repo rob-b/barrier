@@ -1,7 +1,12 @@
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TemplateHaskell   #-}
+
 module Barrier.GitHub where
 
 
+import           Barrier.Clubhouse               (Story)
 import           Barrier.Config                  (AppConfig, configGitHubToken)
 import           Data.Monoid                     ((<>))
 import           Data.Vector                     (Vector)
@@ -11,36 +16,64 @@ import           GitHub.Data.Webhooks.Payload    (HookPullRequest, whPullReqHead
                                                   whPullReqTargetRepo, whPullReqTargetSha,
                                                   whPullReqTargetUser, whRepoName, whUserLogin)
 import qualified GitHub.Endpoints.Repos.Statuses as GitHub
+import           Lens.Micro.Platform             (makeLenses, (^.))
+
+
+data GitHubRequestParams = GitHubRequestParams
+  { _commit :: GitHub.Name GitHub.Commit
+  , _owner  :: GitHub.Name GitHub.Owner
+  , _repo   :: GitHub.Name GitHub.Repo
+  } deriving (Show)
+
+
+makeLenses ''GitHubRequestParams
+
+
+mkStatusParams :: HookPullRequest -> GitHubRequestParams
+mkStatusParams pr =
+  let head' = whPullReqHead pr
+      _commit = GitHub.mkCommitName $ whPullReqTargetSha head'
+      _owner = GitHub.mkOwnerName . whUserLogin $ whPullReqTargetUser head'
+      _repo = GitHub.mkRepoName . whRepoName $ whPullReqTargetRepo head'
+  in GitHubRequestParams {..}
+
+
+setHasStoryStatus :: AppConfig -> HookPullRequest -> Story -> IO ()
+setHasStoryStatus conf pr _story = do
+  let auth' = GitHub.OAuth $ configGitHubToken conf
+  let params = mkStatusParams pr
+  content <-
+    either show show <$>
+    GitHub.createStatus
+      auth'
+      (params ^. owner)
+      (params ^. repo)
+      (params ^. commit)
+      (GitHub.NewStatus
+         GitHub.StatusSuccess
+         Nothing
+         (Just "Has link to clubhouse story.")
+         (Just "Barrier check (is there a corresponding story)"))
+  appendFile "example.txt" (show content <> "\n")
 
 
 setMissingStoryStatus :: AppConfig -> HookPullRequest -> IO ()
 setMissingStoryStatus conf pr = do
-  let head' = whPullReqHead pr
-  let sha = GitHub.mkCommitName $ whPullReqTargetSha head'
-  let owner = GitHub.mkOwnerName . whUserLogin $ whPullReqTargetUser head'
-  let repo = GitHub.mkRepoName . whRepoName $ whPullReqTargetRepo head'
   let auth' = GitHub.OAuth $ configGitHubToken conf
-  content <- either show show <$> newStatus auth' owner repo sha
+  let params = mkStatusParams pr
+  content <-
+    either show show <$>
+    GitHub.createStatus
+      auth'
+      (params ^. owner)
+      (params ^. repo)
+      (params ^. commit)
+      (GitHub.NewStatus
+         GitHub.StatusError
+         Nothing
+         (Just "Cannot find matching story.")
+         (Just "Barrier check (is there a corresponding story)"))
   appendFile "example.txt" (show content <> "\n")
-
-
-newStatus
-  :: GitHub.Auth
-  -> GitHub.Name GitHub.Owner
-  -> GitHub.Name GitHub.Repo
-  -> GitHub.Name GitHub.Commit
-  -> IO (Either GitHub.Error GitHub.Status)
-newStatus auth' owner repo sha = do
-  GitHub.createStatus
-    auth'
-    owner
-    repo
-    sha
-    (GitHub.NewStatus
-       GitHub.StatusError
-       Nothing
-       (Just "Cannot find matching story.")
-       (Just "Barrier check (is there a corresponding story)"))
 
 
 statusesFor
@@ -49,5 +82,5 @@ statusesFor
   -> GitHub.Name GitHub.Repo
   -> GitHub.Name GitHub.Commit
   -> IO (Either GitHub.Error (Vector GitHub.Status))
-statusesFor auth' owner repo sha = do
-  GitHub.statusesFor auth' owner repo sha
+statusesFor auth' owner' repo' sha' =
+  GitHub.statusesFor auth' owner' repo' sha'
