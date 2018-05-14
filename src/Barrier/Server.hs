@@ -8,33 +8,45 @@
 module Barrier.Server
    where
 
-import           Barrier.Config                       (AppConfig, configGitHubSecret, lookupEnv,
-                                                       mkAppConfig)
-import           Barrier.Events                       (selectAction, selectEventType,
+import           Barrier.Config                       (AppConfig,
+                                                       configGitHubSecret,
+                                                       lookupEnv, mkAppConfig)
+import           Barrier.Events                       (selectAction,
+                                                       selectEventType,
                                                        selectResponse)
 import qualified Barrier.Queue                        as Q
 import           Control.Concurrent.Async             (Async, async, wait)
 import           Control.Concurrent.STM.TBMQueue      (TBMQueue, closeTBMQueue)
 import           Control.Exception.Safe               (bracket)
-import           Control.Logger.Simple                (LogConfig (LogConfig), withGlobalLogging)
+import           Control.Logger.Simple                (LogConfig (LogConfig),
+                                                       withGlobalLogging)
 import           Control.Monad                        (void)
 import           Control.Monad.IO.Class               (MonadIO, liftIO)
 import           Control.Monad.STM                    (atomically)
-import           Data.Aeson                           (ToJSON, Value, object, (.=))
+import           Data.Aeson                           (ToJSON, Value, object,
+                                                       (.=))
 import           Data.ByteString                      (ByteString)
 import           Data.HVect                           (HVect ((:&:), HNil))
 import           Data.Text.Encoding                   (decodeUtf8)
 import qualified Data.Vector                          as V
+import           Debug.Trace                          (trace, traceShow)
 import           GitHub.Data.Webhooks.Secure          (isSecurePayload)
-import           Network.HTTP.Types.Status            (Status (Status), status401, status422)
+import           Network.HTTP.Types.Status            (Status (Status),
+                                                       status401, status422)
 import           Network.Wai                          (Middleware)
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import           Web.Spock                            (ActionCtxT, SpockActionCtx, SpockM, body,
-                                                       get, getContext, getState, header, json,
-                                                       middleware, post, prehook, rawHeader, root,
-                                                       runSpock, setStatus, spock)
-import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase), SpockCfg,
-                                                       defaultSpockCfg, spc_errorHandler)
+import           Web.Spock                            (ActionCtxT,
+                                                       SpockActionCtx, SpockM,
+                                                       body, get, getContext,
+                                                       getState, header, json,
+                                                       middleware, post,
+                                                       prehook, rawHeader, root,
+                                                       runSpock, setStatus,
+                                                       spock)
+import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase),
+                                                       SpockCfg,
+                                                       defaultSpockCfg,
+                                                       spc_errorHandler)
 
 
 logger :: Middleware
@@ -111,7 +123,7 @@ handleEvent = do
         Just action -> do
           queue <- appStateQueue <$> getState
           config <- appStateConfig <$> getState
-          _ <- liftIO $ Q.add queue (void $ action config)
+          _ <- trace "queing action" (liftIO $ Q.add queue (void $ action config))
           pure ()
       json (selectResponse wrappedEvent)
 
