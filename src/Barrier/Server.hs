@@ -135,7 +135,7 @@ xo = do
 
 
 run :: IO ()
-run = withGlobalLogging (LogConfig (Just "logfile.txt") False) (bracket setup shutDown runServer)
+run = withGlobalLogging (LogConfig Nothing True) (bracket setup shutDown runServer)
   where
     setup :: IO (TBMQueue Q.Action, Async ())
     setup = do
