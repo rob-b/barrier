@@ -31,7 +31,7 @@ import           Debug.Trace                  (trace, traceShow)
 import           GitHub.Data.Webhooks         (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
 import           GitHub.Data.Webhooks.Events  (IssueCommentEvent,
                                                PullRequestEvent,
-                                               PullRequestEventAction (PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
+                                               PullRequestEventAction (PullRequestActionOther, PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
                                                evIssueCommentPayload,
                                                evPullReqAction,
                                                evPullReqPayload)
@@ -151,7 +151,15 @@ getPayLoadFromPr :: PullRequestEvent -> Maybe HookPullRequest
 getPayLoadFromPr pr@(evPullReqAction -> PullRequestOpenedAction)   = Just $ evPullReqPayload pr
 getPayLoadFromPr pr@(evPullReqAction -> PullRequestEditedAction)   = Just $ evPullReqPayload pr
 getPayLoadFromPr pr@(evPullReqAction -> PullRequestReopenedAction) = Just $ evPullReqPayload pr
+getPayLoadFromPr pr@(syncCheck -> True)                            = Just $ evPullReqPayload pr
 getPayLoadFromPr _                                                 = Nothing
+
+
+syncCheck :: PullRequestEvent -> Bool
+syncCheck event =
+  case evPullReqAction event of
+    (PullRequestActionOther "synchronize") -> True
+    _                                      -> False
 
 
 extractStoryId :: Text -> Maybe Int
