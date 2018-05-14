@@ -53,7 +53,7 @@ setHasStoryStatus conf pr _story = do
          GitHub.StatusSuccess
          Nothing
          (Just "Has link to clubhouse story.")
-         (Just "Barrier check (is there a corresponding story)"))
+         (Just "Barrier story check"))
   appendFile "example.txt" (show content <> "\n")
 
 
@@ -72,7 +72,7 @@ setMissingStoryStatus conf pr = do
          GitHub.StatusError
          Nothing
          (Just "Cannot find matching story.")
-         (Just "Barrier check (is there a corresponding story)"))
+         (Just "Barrier story check"))
   appendFile "example.txt" (show content <> "\n")
 
 
