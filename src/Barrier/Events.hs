@@ -7,17 +7,15 @@
 module Barrier.Events where
 
 import           Barrier.Check                (filterByDomain)
-import           Barrier.Clubhouse            (StoryError (StoryInvalidLinkError),
-                                               getStory, mkClubhouseStoryUrl)
+import           Barrier.Clubhouse            (StoryError (StoryInvalidLinkError), getStory,
+                                               mkClubhouseStoryUrl)
 import           Barrier.Config               (AppConfig, readish)
-import           Barrier.GitHub               (setHasStoryStatus,
-                                               setMissingStoryStatus)
+import           Barrier.GitHub               (setHasStoryStatus, setMissingStoryStatus)
 import           Control.Error                (runExceptT, throwE)
 import           Control.Logger.Simple        (logDebug)
 import           Control.Monad                (mapM)
 import           Control.Monad.Reader         (runReaderT)
-import           Data.Aeson                   (ToJSON, Value, decode, encode,
-                                               object, (.=))
+import           Data.Aeson                   (ToJSON, Value, decode, encode, object, (.=))
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
 import           Data.ByteString.Lazy         (fromStrict, toStrict)
@@ -29,27 +27,19 @@ import qualified Data.Text                    as T
 import qualified Data.Vector                  as V
 import           Debug.Trace                  (trace, traceShow)
 import           GitHub.Data.Webhooks         (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
-import           GitHub.Data.Webhooks.Events  (IssueCommentEvent,
-                                               PullRequestEvent,
-                                               PullRequestEventAction (PullRequestActionOther, PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
-                                               evIssueCommentPayload,
-                                               evPullReqAction,
+import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, PullRequestEvent, PullRequestEventAction (PullRequestActionOther, PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
+                                               evIssueCommentPayload, evPullReqAction,
                                                evPullReqPayload)
-import           GitHub.Data.Webhooks.Payload (HookPullRequest,
-                                               whIssueCommentBody,
-                                               whPullReqBody, whPullReqHead,
-                                               whPullReqTargetRef)
+import           GitHub.Data.Webhooks.Payload (HookPullRequest, whIssueCommentBody, whPullReqBody,
+                                               whPullReqHead, whPullReqTargetRef)
 import           Text.Regex.PCRE.Heavy        (re, scan)
-import           URI.ByteString               (Absolute,
-                                               URIParseError (OtherError),
-                                               URIRef)
+import           URI.ByteString               (Absolute, URIParseError (OtherError), URIRef)
 
 
 data WrappedEvent
   = WrappedPullRequest { unWrapPullRequest :: PullRequestEvent }
   | WrappedIssueComment { unWrappIssueComment :: IssueCommentEvent }
   deriving (Show)
-
 
 
 supportedEvents :: [RepoWebhookEvent]
@@ -124,12 +114,32 @@ handlePullRequestAction pr = do
     convert (Just x) _ = mkClubhouseStoryUrl x
 
 
+checkUpdateComment :: AppConfig
+                   -> HookPullRequest
+                   -> [Either URIParseError (URIRef Absolute)]
+                   -> IO ()
+checkUpdateComment config payload links = do
+  _ <- checkerAndUpdater config payload links
+  case mayTail links of
+    Nothing     -> pure ()
+    Just links' -> addLink config payload links'
+  where
+    mayTail xs =
+      if null xs
+        then Nothing
+        else Just (tail xs)
+
+
+addLink :: AppConfig -> HookPullRequest -> [Either URIParseError (URIRef Absolute)] -> IO ()
+addLink config payload links = undefined
+
+
 checkerAndUpdater :: AppConfig
                   -> HookPullRequest
                   -> [Either URIParseError (URIRef Absolute)]
                   -> IO ()
 checkerAndUpdater config payload links = do
-  responses <- trace "map over links" (mapM doThingWithLink links)
+  responses <- mapM doThingWithLink links
   (errors, stories) <- fmap partitionEithers (traverse runExceptT responses)
   mapM_ (logDebug . T.pack . show) errors
   selectStatus stories
