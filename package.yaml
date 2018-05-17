@@ -55,6 +55,7 @@ library:
   - vector
   - wai
   - wai-extra
+  - warp
 
 executables:
   barrier:

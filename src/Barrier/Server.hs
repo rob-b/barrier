@@ -8,45 +8,36 @@
 module Barrier.Server
    where
 
-import           Barrier.Config                       (AppConfig,
-                                                       configGitHubSecret,
-                                                       lookupEnv, mkAppConfig)
-import           Barrier.Events                       (selectAction,
-                                                       selectEventType,
+
+import           Barrier.Config                       (AppConfig, configGitHubSecret, lookupEnv,
+                                                       mkAppConfig)
+import           Barrier.Events                       (selectAction, selectEventType,
                                                        selectResponse)
 import qualified Barrier.Queue                        as Q
 import           Control.Concurrent.Async             (Async, async, wait)
 import           Control.Concurrent.STM.TBMQueue      (TBMQueue, closeTBMQueue)
 import           Control.Exception.Safe               (bracket)
-import           Control.Logger.Simple                (LogConfig (LogConfig),
-                                                       withGlobalLogging)
+import           Control.Logger.Simple                (LogConfig (LogConfig), withGlobalLogging)
 import           Control.Monad                        (void)
 import           Control.Monad.IO.Class               (MonadIO, liftIO)
 import           Control.Monad.STM                    (atomically)
-import           Data.Aeson                           (ToJSON, Value, object,
-                                                       (.=))
+import           Data.Aeson                           (ToJSON, Value, object, (.=))
 import           Data.ByteString                      (ByteString)
 import           Data.HVect                           (HVect ((:&:), HNil))
 import           Data.Text.Encoding                   (decodeUtf8)
 import qualified Data.Vector                          as V
 import           Debug.Trace                          (trace, traceShow)
 import           GitHub.Data.Webhooks.Secure          (isSecurePayload)
-import           Network.HTTP.Types.Status            (Status (Status),
-                                                       status401, status422)
+import           Network.HTTP.Types.Status            (Status (Status), status401, status422)
 import           Network.Wai                          (Middleware)
+import qualified Network.Wai.Handler.Warp             as Warp
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import           Web.Spock                            (ActionCtxT,
-                                                       SpockActionCtx, SpockM,
-                                                       body, get, getContext,
-                                                       getState, header, json,
-                                                       middleware, post,
-                                                       prehook, rawHeader, root,
-                                                       runSpock, setStatus,
-                                                       spock)
-import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase),
-                                                       SpockCfg,
-                                                       defaultSpockCfg,
-                                                       spc_errorHandler)
+import           Web.Spock                            (ActionCtxT, SpockActionCtx, SpockM, body,
+                                                       get, getContext, getState, header, json,
+                                                       middleware, post, prehook, rawHeader, root,
+                                                       runSpock, setStatus, spock, spockAsApp)
+import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase), SpockCfg,
+                                                       defaultSpockCfg, spc_errorHandler)
 
 
 logger :: Middleware
@@ -148,11 +139,18 @@ run = withGlobalLogging (LogConfig Nothing True) (bracket setup shutDown runServ
       case appConfigM of
         Nothing -> putStrLn "You must set GITHUB_KEY and CLUBHOUSE_API_TOKEN"
         Just appConfig -> do
-          port <- maybe 9000 read <$> lookupEnv "PORT"
+          port <- maybe (9000 :: Int) read <$> lookupEnv "PORT"
           let appState = AppState queue appConfig
           spockCfg <- barrierConfig <$> defaultSpockCfg () PCNoDatabase appState
-          runSpock port (spock spockCfg $ middleware logger >> app)
+          runApp port (spock spockCfg $ middleware logger >> app)
     shutDown :: (TBMQueue a, Async b) -> IO b
     shutDown (queue, worker) = do
       atomically $ closeTBMQueue queue
       wait worker
+
+
+runApp :: Warp.Port -> IO Middleware -> IO ()
+runApp port mw = do
+  let settings = Warp.setPort port Warp.defaultSettings
+  app' <- spockAsApp mw
+  Warp.runSettings settings app'
