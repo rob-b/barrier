@@ -26,7 +26,7 @@ import           Data.ByteString                      (ByteString)
 import           Data.HVect                           (HVect ((:&:), HNil))
 import           Data.Text.Encoding                   (decodeUtf8)
 import qualified Data.Vector                          as V
-import           Debug.Trace                          (trace, traceShow)
+import           Debug.Trace                          (trace)
 import           GitHub.Data.Webhooks.Secure          (isSecurePayload)
 import           Network.HTTP.Types.Status            (Status (Status), status401, status422)
 import           Network.Wai                          (Middleware)
@@ -35,7 +35,7 @@ import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import           Web.Spock                            (ActionCtxT, SpockActionCtx, SpockM, body,
                                                        get, getContext, getState, header, json,
                                                        middleware, post, prehook, rawHeader, root,
-                                                       runSpock, setStatus, spock, spockAsApp)
+                                                       setStatus, spock, spockAsApp)
 import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase), SpockCfg,
                                                        defaultSpockCfg, spc_errorHandler)
 

@@ -9,17 +9,13 @@ module Barrier.GitHub where
 import           Barrier.Clubhouse               (Story)
 import           Barrier.Config                  (AppConfig, configGitHubToken)
 import           Control.Logger.Simple           (logDebug)
-import           Data.Monoid                     ((<>))
 import qualified Data.Text                       as T
 import           Data.Vector                     (Vector)
 import qualified GitHub.Auth                     as GitHub
 import qualified GitHub.Data                     as GitHub
-import           GitHub.Data.Webhooks.Payload    (HookPullRequest,
-                                                  whPullReqHead,
-                                                  whPullReqTargetRepo,
-                                                  whPullReqTargetSha,
-                                                  whPullReqTargetUser,
-                                                  whRepoName, whUserLogin)
+import           GitHub.Data.Webhooks.Payload    (HookPullRequest, whPullReqHead,
+                                                  whPullReqTargetRepo, whPullReqTargetSha,
+                                                  whPullReqTargetUser, whRepoName, whUserLogin)
 import qualified GitHub.Endpoints.Repos.Statuses as GitHub
 import           Lens.Micro.Platform             (makeLenses, (^.))
 
