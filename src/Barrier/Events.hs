@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE QuasiQuotes         #-}
@@ -105,7 +104,7 @@ handlePullRequestAction pr = do
   let links = [storyURI] <> extractLinks payload
   if traceShow links (null links)
     then pure (`setMissingStoryStatus` payload)
-    else pure (\config -> trace "checking and updating" (checkerAndUpdater config payload links))
+    else pure (\config -> trace "checking and updating" (checkUpdateComment config payload links))
   where
     convert
       :: Show a
@@ -132,7 +131,7 @@ checkUpdateComment config payload links = do
 
 
 addLink :: AppConfig -> HookPullRequest -> [Either URIParseError (URIRef Absolute)] -> IO ()
-addLink config payload links = undefined
+addLink _config _payload _links = pure ()
 
 
 checkerAndUpdater :: AppConfig

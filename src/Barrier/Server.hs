@@ -29,19 +29,20 @@ import qualified Data.Vector                          as V
 import           Debug.Trace                          (trace)
 import           GitHub.Data.Webhooks.Secure          (isSecurePayload)
 import           Network.HTTP.Types.Status            (Status (Status), status401, status422)
-import           Network.Wai                          (Middleware)
+import           Network.Wai                          (Application, Middleware)
 import qualified Network.Wai.Handler.Warp             as Warp
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import           Web.Spock                            (ActionCtxT, SpockActionCtx, SpockM, body,
                                                        get, getContext, getState, header, json,
-                                                       middleware, post, prehook, rawHeader, root,
-                                                       setStatus, spock, spockAsApp)
+                                                       post, prehook, rawHeader, root, setStatus,
+                                                       spock, spockAsApp)
 import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase), SpockCfg,
                                                        defaultSpockCfg, spc_errorHandler)
 
 
 logger :: Middleware
 logger = logStdoutDev
+
 
 data SignedRequest = SignedRequest
 
@@ -126,31 +127,41 @@ xo = do
 
 
 run :: IO ()
-run = withGlobalLogging (LogConfig Nothing True) (bracket setup shutDown runServer)
+run = withGlobalLogging (LogConfig Nothing True) (bracket setupApp shutdownApp runServer)
   where
-    setup :: IO (TBMQueue Q.Action, Async ())
-    setup = do
-      queue <- Q.make 100
-      workerRef <- async $ Q.worker queue
-      pure (queue, workerRef)
     runServer :: (TBMQueue Q.Action, b) -> IO ()
     runServer (queue, _worker) = do
       appConfigM <- mkAppConfig
       case appConfigM of
         Nothing -> putStrLn "You must set GITHUB_KEY and CLUBHOUSE_API_TOKEN"
         Just appConfig -> do
-          port <- maybe (9000 :: Int) read <$> lookupEnv "PORT"
           let appState = AppState queue appConfig
-          spockCfg <- barrierConfig <$> defaultSpockCfg () PCNoDatabase appState
-          runApp port (spock spockCfg $ middleware logger >> app)
-    shutDown :: (TBMQueue a, Async b) -> IO b
-    shutDown (queue, worker) = do
-      atomically $ closeTBMQueue queue
-      wait worker
+          (port, application) <- mkApp appState
+          runApp port application
 
 
-runApp :: Warp.Port -> IO Middleware -> IO ()
-runApp port mw = do
+shutdownApp :: (TBMQueue a, Async b) -> IO b
+shutdownApp (queue, worker) = do
+  atomically $ closeTBMQueue queue
+  wait worker
+
+
+setupApp :: IO (TBMQueue Q.Action, Async ())
+setupApp = do
+  queue <- Q.make 100
+  workerRef <- async $ Q.worker queue
+  pure (queue, workerRef)
+
+
+mkApp :: AppState -> IO (Warp.Port, Application)
+mkApp appState = do
+  port <- maybe 9000  read <$> lookupEnv "PORT"
+  spockConfig <- barrierConfig <$> defaultSpockCfg () PCNoDatabase appState
+  app' <- spockAsApp (spock spockConfig app)
+  pure (port, logger app')
+
+
+runApp :: Warp.Port -> Application -> IO ()
+runApp port application = do
   let settings = Warp.setPort port Warp.defaultSettings
-  app' <- spockAsApp mw
-  Warp.runSettings settings app'
+  Warp.runSettings settings application

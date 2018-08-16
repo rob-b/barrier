@@ -36,6 +36,7 @@ library:
   - connection
   - data-default-class
   - errors
+  - foreign-store
   - github
   - github-webhooks
   - http-client
