@@ -49,10 +49,8 @@ supportedEvents = [WebhookIssueCommentEvent, WebhookPullRequestEvent]
 -- | Given the value of the X-Github-Event header and the request body, select the appropriate
 -- event type
 selectEventType :: ByteString -> ByteString -> Maybe WrappedEvent
-selectEventType eventHeader eventBody =
-  decodeEventType
-    (listToMaybe $ catMaybes $ fmap (`matchEvent` eventHeader) supportedEvents)
-    eventBody
+selectEventType eventHeader =
+  decodeEventType (listToMaybe $ catMaybes $ fmap (`matchEvent` eventHeader) supportedEvents)
 
 
 -- | Given a RepoWebhookEvent and the bytestring value of X-Github-Event compare the bytestring
@@ -118,11 +116,15 @@ checkUpdateComment :: AppConfig
                    -> HookPullRequest
                    -> [Either URIParseError (URIRef Absolute)]
                    -> IO ()
-checkUpdateComment config payload links = do
-  _ <- checkerAndUpdater config payload links
-  case mayTail links of
-    Nothing     -> pure ()
-    Just links' -> addLink config payload links'
+checkUpdateComment config payload linksE = do
+  _ <- checkerAndUpdater config payload linksE
+
+  -- this is relying on our list of links always starting with a link built from the branch name
+  -- and links found in comments being in the tail. It would be better to make those different
+  -- types
+  case mayTail linksE of
+    Nothing    -> pure ()
+    Just links -> addLink config payload links
   where
     mayTail xs =
       if null xs
@@ -138,17 +140,17 @@ checkerAndUpdater :: AppConfig
                   -> HookPullRequest
                   -> [Either URIParseError (URIRef Absolute)]
                   -> IO ()
-checkerAndUpdater config payload links = do
-  responses <- mapM doThingWithLink links
-  (errors, stories) <- fmap partitionEithers (traverse runExceptT responses)
+checkerAndUpdater config payload linksE = do
+  storyLinksE <- mapM getStoryLinkFromPR linksE
+  (errors, stories) <- fmap partitionEithers (traverse runExceptT storyLinksE)
   mapM_ (logDebug . T.pack . show) errors
   selectStatus stories
   where
     selectStatus (story:_) = setHasStoryStatus config payload story
     selectStatus []        = setMissingStoryStatus config payload
 
-    doThingWithLink (Left reason) = pure $ throwE $ StoryInvalidLinkError (show reason)
-    doThingWithLink (Right link)  = linkDebug link >> runReaderT (getStory link) config
+    getStoryLinkFromPR (Left reason) = pure $ throwE $ StoryInvalidLinkError (show reason)
+    getStoryLinkFromPR (Right link)  = linkDebug link >> runReaderT (getStory link) config
 
     linkDebug link = logDebug ("Checking link: " <> T.pack (show link))
 
