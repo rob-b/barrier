@@ -100,10 +100,13 @@ handlePullRequestAction pr = do
   let targetRef = whPullReqTargetRef . whPullReqHead $ payload
   let storyURI = convert (extractStoryId targetRef) (T.unpack targetRef)
   let links = [storyURI] <> extractLinks payload
-  if traceShow links (null links)
-    then pure (`setMissingStoryStatus` payload)
-    else pure (\config -> trace "checking and updating" (checkUpdateComment config payload links))
+  pure (duppy links payload)
   where
+    duppy :: [Either URIParseError (URIRef Absolute)] -> HookPullRequest -> AppConfig -> IO ()
+    duppy [] payload config = setMissingStoryStatus config payload
+    duppy [link] payload config = trace "checking and updating" (checkUpdateComment config payload link [])
+    duppy (link:links) payload config = trace "checking and updating" (checkUpdateComment config payload link links)
+
     convert
       :: Show a
       => Maybe a -> String -> Either URIParseError (URIRef Absolute)
@@ -114,22 +117,12 @@ handlePullRequestAction pr = do
 
 checkUpdateComment :: AppConfig
                    -> HookPullRequest
+                   -> Either URIParseError (URIRef Absolute)
                    -> [Either URIParseError (URIRef Absolute)]
                    -> IO ()
-checkUpdateComment config payload linksE = do
-  _ <- checkerAndUpdater config payload linksE
-
-  -- this is relying on our list of links always starting with a link built from the branch name
-  -- and links found in comments being in the tail. It would be better to make those different
-  -- types
-  case mayTail linksE of
-    Nothing    -> pure ()
-    Just links -> addLink config payload links
-  where
-    mayTail xs =
-      if null xs
-        then Nothing
-        else Just (tail xs)
+checkUpdateComment config payload linkFromRefE linksFromBodyE = do
+  _ <- checkerAndUpdater config payload ([linkFromRefE] <> linksFromBodyE)
+  addLink config payload linksFromBodyE
 
 
 addLink :: AppConfig -> HookPullRequest -> [Either URIParseError (URIRef Absolute)] -> IO ()

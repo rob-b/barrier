@@ -57,6 +57,7 @@ library:
   - wai
   - wai-extra
   - warp
+  - containers
 
 executables:
   barrier:
