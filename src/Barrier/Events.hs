@@ -104,7 +104,6 @@ handlePullRequestAction pr = do
   where
     duppy :: [Either URIParseError (URIRef Absolute)] -> HookPullRequest -> AppConfig -> IO ()
     duppy [] payload config = setMissingStoryStatus config payload
-    duppy [link] payload config = trace "checking and updating" (checkUpdateComment config payload link [])
     duppy (link:links) payload config = trace "checking and updating" (checkUpdateComment config payload link links)
 
     convert
