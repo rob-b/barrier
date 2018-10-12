@@ -15,7 +15,8 @@ import           Control.Error                (runExceptT, throwE)
 import           Control.Logger.Simple        (logDebug)
 import           Control.Monad                (mapM)
 import           Control.Monad.Reader         (runReaderT)
-import           Data.Aeson                   (ToJSON, Value, decode, encode, object, (.=))
+import           Data.Aeson                   (FromJSON, ToJSON, Value, decode, encode, object,
+                                               (.=))
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
 import           Data.ByteString.Lazy         (fromStrict, toStrict)
@@ -27,11 +28,15 @@ import qualified Data.Text                    as T
 import qualified Data.Vector                  as V
 import           Debug.Trace                  (trace, traceShow)
 import           GitHub.Data.Webhooks         (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
-import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, PullRequestEvent, PullRequestEventAction (PullRequestActionOther, PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
-                                               evIssueCommentPayload, evPullReqAction,
-                                               evPullReqPayload)
-import           GitHub.Data.Webhooks.Payload (HookPullRequest, whIssueCommentBody, whPullReqBody,
-                                               whPullReqHead, whPullReqTargetRef)
+import           GitHub.Data.Webhooks.Events  (IssueCommentEvent,
+                                               IssueCommentEventAction (IssueCommentCreatedAction),
+                                               PullRequestEvent,
+                                               PullRequestEventAction (PullRequestActionOther, PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
+                                               evIssueCommentAction, evIssueCommentPayload,
+                                               evPullReqAction, evPullReqPayload)
+import           GitHub.Data.Webhooks.Payload (HookIssueComment, HookPullRequest,
+                                               whIssueCommentBody, whPullReqBody, whPullReqHead,
+                                               whPullReqTargetRef)
 import           Text.Regex.PCRE.Heavy        (re, scan)
 import           URI.ByteString               (Absolute, URIParseError (OtherError), URIRef)
 
@@ -69,9 +74,13 @@ selectResponse (WrappedPullRequest pr)     = handlePullRequestEvent pr
 
 
 decodeEventType :: Maybe RepoWebhookEvent -> ByteString -> Maybe WrappedEvent
-decodeEventType (Just WebhookPullRequestEvent) bs =
-  WrappedPullRequest <$> (decode (fromStrict bs) :: Maybe PullRequestEvent)
+decodeEventType (Just WebhookPullRequestEvent) bs = WrappedPullRequest <$> (decodeFromStrict bs :: Maybe PullRequestEvent)
+decodeEventType (Just WebhookIssueCommentEvent) bs = WrappedIssueComment <$> (decodeFromStrict bs :: Maybe IssueCommentEvent)
 decodeEventType _ _ = Nothing
+
+
+decodeFromStrict :: FromJSON a => ByteString -> Maybe a
+decodeFromStrict = decode . fromStrict
 
 
 handleCommentEvent :: IssueCommentEvent -> Value
@@ -91,6 +100,7 @@ handlePullRequestEvent event =
 
 selectAction :: WrappedEvent -> Maybe (AppConfig -> IO ())
 selectAction (WrappedPullRequest pr) = handlePullRequestAction pr
+-- selectAction (WrappedIssueComment issue) = hand issue
 selectAction _                       = Nothing
 
 
@@ -157,6 +167,12 @@ getPayLoadFromPr pr@(evPullReqAction -> PullRequestEditedAction)   = Just $ evPu
 getPayLoadFromPr pr@(evPullReqAction -> PullRequestReopenedAction) = Just $ evPullReqPayload pr
 getPayLoadFromPr pr@(syncCheck -> True)                            = Just $ evPullReqPayload pr
 getPayLoadFromPr _                                                 = Nothing
+
+
+getPayLoadFromIssue :: IssueCommentEvent -> Maybe HookIssueComment
+getPayLoadFromIssue issue@(evIssueCommentAction -> IssueCommentCreatedAction) =
+  Just $ evIssueCommentPayload issue
+getPayLoadFromIssue _ = Nothing
 
 
 syncCheck :: PullRequestEvent -> Bool
