@@ -15,12 +15,11 @@ import           Control.Error                (runExceptT, throwE)
 import           Control.Logger.Simple        (logDebug)
 import           Control.Monad                (mapM)
 import           Control.Monad.Reader         (runReaderT)
-import           Data.Aeson                   (FromJSON, ToJSON, Value, decode, encode, object,
-                                               (.=))
+import           Data.Aeson                   (ToJSON, Value, decodeStrict, encode, object, (.=))
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
-import           Data.ByteString.Lazy         (fromStrict, toStrict)
-import           Data.Either                  (partitionEithers)
+import           Data.ByteString.Lazy         (toStrict)
+import           Data.Either                  (partitionEithers, rights)
 import           Data.Maybe                   (catMaybes, listToMaybe)
 import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
@@ -44,6 +43,12 @@ import           URI.ByteString               (Absolute, URIParseError (OtherErr
 data WrappedEvent
   = WrappedPullRequest { unWrapPullRequest :: PullRequestEvent }
   | WrappedIssueComment { unWrappIssueComment :: IssueCommentEvent }
+  deriving (Show)
+
+
+data WrappedHook
+  = WrappedHookPullRequest { unWrapHookPullRequest :: HookPullRequest}
+  | WrappedHookIssueComment { unWrapHookIssueComment :: HookIssueComment}
   deriving (Show)
 
 
@@ -74,13 +79,9 @@ selectResponse (WrappedPullRequest pr)     = handlePullRequestEvent pr
 
 
 decodeEventType :: Maybe RepoWebhookEvent -> ByteString -> Maybe WrappedEvent
-decodeEventType (Just WebhookPullRequestEvent) bs = WrappedPullRequest <$> (decodeFromStrict bs :: Maybe PullRequestEvent)
-decodeEventType (Just WebhookIssueCommentEvent) bs = WrappedIssueComment <$> (decodeFromStrict bs :: Maybe IssueCommentEvent)
+decodeEventType (Just WebhookPullRequestEvent) bs = WrappedPullRequest <$> (decodeStrict bs :: Maybe PullRequestEvent)
+decodeEventType (Just WebhookIssueCommentEvent) bs = WrappedIssueComment <$> (decodeStrict bs :: Maybe IssueCommentEvent)
 decodeEventType _ _ = Nothing
-
-
-decodeFromStrict :: FromJSON a => ByteString -> Maybe a
-decodeFromStrict = decode . fromStrict
 
 
 handleCommentEvent :: IssueCommentEvent -> Value
@@ -93,35 +94,45 @@ handleCommentEvent event =
 handlePullRequestEvent :: PullRequestEvent -> Value
 handlePullRequestEvent event =
   let inner = V.singleton $ object ["base" .= (ref :: Text)]
-      ref = maybe "dunno" (whPullReqTargetRef . whPullReqHead) payload
-      payload = getPayLoadFromPr event
+      ref = maybe "Dunno." (whPullReqTargetRef . whPullReqHead) payload
+      payload = unWrapHookPullRequest <$> getPayLoadFromPr event
   in object ["data" .= inner]
 
 
 selectAction :: WrappedEvent -> Maybe (AppConfig -> IO ())
-selectAction (WrappedPullRequest pr) = handlePullRequestAction pr
--- selectAction (WrappedIssueComment issue) = hand issue
-selectAction _                       = Nothing
+selectAction (WrappedPullRequest pr)     = handlePullRequestAction pr
+selectAction (WrappedIssueComment issue) = handleIssueCommentEventAction issue
+selectAction _                           = Nothing
+
+
+handleIssueCommentEventAction :: IssueCommentEvent -> Maybe (AppConfig -> IO ())
+handleIssueCommentEventAction issue = do
+  payload <- getPayLoadFromIssue issue
+  let links = rights $ extractLinks payload
+  traceShow links $ pure undefined
 
 
 handlePullRequestAction :: PullRequestEvent -> Maybe (AppConfig -> IO ())
 handlePullRequestAction pr = do
   payload <- getPayLoadFromPr pr
-  let targetRef = whPullReqTargetRef . whPullReqHead $ payload
+  let unwrappedPayload = unWrapHookPullRequest payload
+  let targetRef = whPullReqTargetRef . whPullReqHead $ unwrappedPayload
   let storyURI = convert (extractStoryId targetRef) (T.unpack targetRef)
   let links = [storyURI] <> extractLinks payload
-  pure (duppy links payload)
+  pure (duppy links unwrappedPayload)
   where
-    duppy :: [Either URIParseError (URIRef Absolute)] -> HookPullRequest -> AppConfig -> IO ()
-    duppy [] payload config = setMissingStoryStatus config payload
-    duppy (link:links) payload config = trace "checking and updating" (checkUpdateComment config payload link links)
-
     convert
       :: Show a
       => Maybe a -> String -> Either URIParseError (URIRef Absolute)
     convert Nothing ref =
       Left $ OtherError ("Could not determine story id from branch name: " <> ref)
     convert (Just x) _ = mkClubhouseStoryUrl x
+
+
+duppy :: [Either URIParseError (URIRef Absolute)] -> HookPullRequest -> AppConfig -> IO ()
+duppy [] payload config = setMissingStoryStatus config payload
+duppy (link:links) payload config =
+  trace "checking and updating" (checkUpdateComment config payload link links)
 
 
 checkUpdateComment :: AppConfig
@@ -157,21 +168,29 @@ checkerAndUpdater config payload linksE = do
     linkDebug link = logDebug ("Checking link: " <> T.pack (show link))
 
 
-extractLinks :: HookPullRequest -> [Either URIParseError (URIRef Absolute)]
-extractLinks pr = filterByDomain (whPullReqBody pr) "app.clubhouse.io"
+extractLinks :: WrappedHook -> [Either URIParseError (URIRef Absolute)]
+extractLinks hook =
+  let body
+        | (WrappedHookIssueComment inner) <- hook = whIssueCommentBody inner
+        | (WrappedHookPullRequest inner) <- hook = whPullReqBody inner
+        | otherwise = ""
+  in filterByDomain body "app.clubhouse.io"
 
 
-getPayLoadFromPr :: PullRequestEvent -> Maybe HookPullRequest
-getPayLoadFromPr pr@(evPullReqAction -> PullRequestOpenedAction)   = Just $ evPullReqPayload pr
-getPayLoadFromPr pr@(evPullReqAction -> PullRequestEditedAction)   = Just $ evPullReqPayload pr
-getPayLoadFromPr pr@(evPullReqAction -> PullRequestReopenedAction) = Just $ evPullReqPayload pr
-getPayLoadFromPr pr@(syncCheck -> True)                            = Just $ evPullReqPayload pr
-getPayLoadFromPr _                                                 = Nothing
+getPayLoadFromPr :: PullRequestEvent -> Maybe WrappedHook
+getPayLoadFromPr pr@(evPullReqAction -> PullRequestOpenedAction) =
+  Just $ WrappedHookPullRequest (evPullReqPayload pr)
+getPayLoadFromPr pr@(evPullReqAction -> PullRequestEditedAction) =
+  Just $ WrappedHookPullRequest (evPullReqPayload pr)
+getPayLoadFromPr pr@(evPullReqAction -> PullRequestReopenedAction) =
+  Just $ WrappedHookPullRequest (evPullReqPayload pr)
+getPayLoadFromPr pr@(syncCheck -> True) = Just $ WrappedHookPullRequest (evPullReqPayload pr)
+getPayLoadFromPr _ = Nothing
 
 
-getPayLoadFromIssue :: IssueCommentEvent -> Maybe HookIssueComment
+getPayLoadFromIssue :: IssueCommentEvent -> Maybe WrappedHook
 getPayLoadFromIssue issue@(evIssueCommentAction -> IssueCommentCreatedAction) =
-  Just $ evIssueCommentPayload issue
+  Just . WrappedHookIssueComment $ evIssueCommentPayload issue
 getPayLoadFromIssue _ = Nothing
 
 

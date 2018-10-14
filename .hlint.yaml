@@ -1,6 +1,7 @@
 - group: {name: generalise, enabled: true}
 - ignore: {name: Eta reduce}
 - ignore: {name: Redundant do}
+- ignore: {name: Redundant return}
 
 # HLint configuration file
 # https://github.com/ndmitchell/hlint
