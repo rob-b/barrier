@@ -10,7 +10,8 @@ import           Barrier.Check                (filterByDomain)
 import           Barrier.Clubhouse            (StoryError (StoryInvalidLinkError), getStory,
                                                mkClubhouseStoryUrl)
 import           Barrier.Config               (AppConfig, readish)
-import           Barrier.GitHub               (setHasStoryStatus, setMissingStoryStatus)
+import           Barrier.GitHub               (addStoryLinkComment, setHasStoryStatus,
+                                               setMissingStoryStatus)
 import           Control.Error                (runExceptT, throwE)
 import           Control.Logger.Simple        (logDebug)
 import           Control.Monad                (mapM)
@@ -25,6 +26,7 @@ import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
 import qualified Data.Text                    as T
 import qualified Data.Vector                  as V
+import           Debug.Trace
 import           Debug.Trace                  (trace, traceShow)
 import           GitHub.Data.Webhooks         (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
 import           GitHub.Data.Webhooks.Events  (IssueCommentEvent,
@@ -146,7 +148,7 @@ checkUpdateComment config payload linkFromRefE linksFromBodyE = do
 
 
 addLink :: AppConfig -> HookPullRequest -> [Either URIParseError (URIRef Absolute)] -> IO ()
-addLink _config _payload _links = pure ()
+addLink config payload links = addStoryLinkComment config payload links
 
 
 checkerAndUpdater :: AppConfig

@@ -5,19 +5,26 @@
 
 module Barrier.GitHub where
 
-
-import           Barrier.Clubhouse               (Story)
-import           Barrier.Config                  (AppConfig, configGitHubToken)
-import           Control.Logger.Simple           (logDebug)
-import qualified Data.Text                       as T
-import           Data.Vector                     (Vector)
-import qualified GitHub.Auth                     as GitHub
-import qualified GitHub.Data                     as GitHub
-import           GitHub.Data.Webhooks.Payload    (HookPullRequest, whPullReqHead,
-                                                  whPullReqTargetRepo, whPullReqTargetSha,
-                                                  whPullReqTargetUser, whRepoName, whUserLogin)
-import qualified GitHub.Endpoints.Repos.Statuses as GitHub
-import           Lens.Micro.Platform             (makeLenses, (^.))
+import           Barrier.Clubhouse                (Story)
+import           Barrier.Config                   (AppConfig, configGitHubToken)
+import           Control.Logger.Simple            (logDebug)
+import qualified Data.ByteString                  as B
+import           Data.Proxy                       (Proxy (Proxy))
+import           Data.Text                        (Text)
+import qualified Data.Text                        as T
+import           Data.Text.Encoding               (decodeUtf8, encodeUtf8)
+import           Data.Text.Read                   (decimal)
+import           Data.Vector                      (Vector)
+import qualified GitHub.Auth                      as GitHub
+import qualified GitHub.Data                      as GitHub
+import           GitHub.Data.Webhooks.Payload     (HookPullRequest, getUrl, whPullReqHead,
+                                                   whPullReqIssueUrl, whPullReqTargetRepo,
+                                                   whPullReqTargetSha, whPullReqTargetUser,
+                                                   whRepoName, whUserLogin)
+import qualified GitHub.Endpoints.Issues.Comments as GitHub
+import qualified GitHub.Endpoints.Repos.Statuses  as GitHub
+import           Lens.Micro.Platform              (makeLenses, (^.))
+import           URI.ByteString                   (parseURI, strictURIParserOptions, uriPath)
 
 
 data GitHubRequestParams = GitHubRequestParams
@@ -37,6 +44,26 @@ mkStatusParams pr =
       _owner = GitHub.mkOwnerName . whUserLogin $ whPullReqTargetUser head'
       _repo = GitHub.mkRepoName . whRepoName $ whPullReqTargetRepo head'
   in GitHubRequestParams {..}
+
+
+data GitHubCreateCommentRequestParams = GitHubCreateCommentRequestParams
+  { _commentIssue :: GitHub.Id GitHub.Issue
+  , _commentOwner :: GitHub.Name GitHub.Owner
+  , _commentRepo  :: GitHub.Name GitHub.Repo
+  } deriving (Show)
+
+
+makeLenses ''GitHubCreateCommentRequestParams
+
+
+mkCommentParams :: HookPullRequest -> GitHubCreateCommentRequestParams
+mkCommentParams pr =
+  let issueUrl = whPullReqIssueUrl pr
+      head' = whPullReqHead pr
+      _commentOwner = GitHub.mkOwnerName . whUserLogin $ whPullReqTargetUser head'
+      _commentRepo = GitHub.mkRepoName . whRepoName $ whPullReqTargetRepo head'
+      _commentIssue = getIssueId (encodeUtf8 $ getUrl issueUrl)
+  in GitHubCreateCommentRequestParams {..}
 
 
 setHasStoryStatus :: AppConfig -> HookPullRequest -> Story -> IO ()
@@ -85,3 +112,35 @@ statusesFor
   -> IO (Either GitHub.Error (Vector GitHub.Status))
 statusesFor auth' owner' repo' sha' =
   GitHub.statusesFor auth' owner' repo' sha'
+
+
+-- | partial function that relies on github's promise to always return a valid issue url
+getIssueId :: B.ByteString -> GitHub.Id GitHub.Issue
+getIssueId url =
+  let path = either (error . show) id $ uriPath <$> parseURI strictURIParserOptions url
+      segments = B.split 47 path
+      issueId = maybe (error "oh no") (GitHub.mkId (Proxy :: Proxy GitHub.Issue)) (getId segments)
+  in issueId
+  where
+    getId :: [B.ByteString] -> Maybe Int
+    getId (_:_:_:_:_:x:_) = readish (decodeUtf8 x)
+    getId _               = Nothing
+
+
+readish :: Integral a => Text -> Maybe a
+readish s = either (const Nothing) (Just . fst) (decimal s)
+
+
+addStoryLinkComment :: (Show b) => AppConfig -> HookPullRequest -> [b] -> IO ()
+addStoryLinkComment conf pr links = do
+  let auth' = GitHub.OAuth $ configGitHubToken conf
+  let params = mkCommentParams pr
+  content <-
+    either show show <$>
+    GitHub.createComment
+      auth'
+      (params ^. commentOwner)
+      (params ^. commentRepo)
+      (params ^. commentIssue)
+      (T.pack $ show links)
+  logDebug $ T.pack (show content)
