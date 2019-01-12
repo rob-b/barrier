@@ -4,18 +4,33 @@ module Barrier.Check
   , tokenise
   , filterByDomain
   , splitLines
+  , extractClubhouseLinks
   ) where
 
-import           Barrier.Clubhouse   (webappURIRefToApiUrl)
-import           Data.ByteString     (ByteString)
-import qualified Data.ByteString     as B
-import           Data.Either         (rights)
-import           Data.Text           (Text)
-import qualified Data.Text           as T
-import           Data.Text.Encoding  (encodeUtf8)
-import           Lens.Micro.Platform ((^?), _Just)
-import           URI.ByteString      (Absolute, URIParseError, URIRef, authorityHostL, authorityL,
-                                      hostBSL, parseURI, strictURIParserOptions)
+import           Barrier.Clubhouse            (webappURIRefToApiUrl)
+import           Barrier.Events.Types         (WrappedHook (WrappedHookIssueComment, WrappedHookPullRequest))
+import           Data.ByteString              (ByteString)
+import qualified Data.ByteString              as B
+import           Data.Either                  (rights)
+import           Data.Text                    (Text)
+import qualified Data.Text                    as T
+import           Data.Text.Encoding           (encodeUtf8)
+import           GitHub.Data.Webhooks.Payload (whIssueCommentBody, whPullReqBody)
+import           Lens.Micro.Platform          ((^?), _Just)
+import           URI.ByteString               (Absolute, URIParseError, URIRef, authorityHostL,
+                                               authorityL, hostBSL, parseURI,
+                                               strictURIParserOptions)
+
+
+getHookBody :: WrappedHook -> Text
+getHookBody hook
+  | (WrappedHookIssueComment inner) <- hook = whIssueCommentBody inner
+  | (WrappedHookPullRequest inner) <- hook = whPullReqBody inner
+  | otherwise = ""
+
+
+extractClubhouseLinks :: WrappedHook -> [Either URIParseError (URIRef Absolute)]
+extractClubhouseLinks hook = filterByDomain (getHookBody hook) "app.clubhouse.io"
 
 
 filterByDomain :: Text -> ByteString -> [Either URIParseError (URIRef Absolute)]

@@ -5,8 +5,9 @@
 module Barrier.Events.Comment where
 
 
+import           Barrier.Check                (extractClubhouseLinks)
 import           Barrier.Config               (AppConfig)
-import           Barrier.Events.Types         (WrappedHook (WrappedHookIssueComment), extractLinks)
+import           Barrier.Events.Types         (WrappedHook (WrappedHookIssueComment))
 import           Data.Aeson                   (Value, object, (.=))
 import           Data.Either                  (rights)
 import qualified Data.Vector                  as V
@@ -27,7 +28,7 @@ handleCommentEvent event =
 handleIssueCommentEventAction :: IssueCommentEvent -> Maybe (AppConfig -> IO ())
 handleIssueCommentEventAction issue = do
   payload <- getPayLoadFromIssue issue
-  let allLinks = extractLinks payload
+  let allLinks = extractClubhouseLinks payload
   let links = traceShow allLinks (rights allLinks)
   traceShow links $ pure undefined
 

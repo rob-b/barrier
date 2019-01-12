@@ -7,10 +7,11 @@
 
 module Barrier.Events.PullRequest where
 
+import           Barrier.Check                (extractClubhouseLinks)
 import           Barrier.Clubhouse            (Story, StoryError (StoryInvalidLinkError), getStory,
                                                mkClubhouseStoryUrl)
 import           Barrier.Config               (AppConfig, readish)
-import           Barrier.Events.Types         (WrappedHook (WrappedHookPullRequest), extractLinks,
+import           Barrier.Events.Types         (WrappedHook (WrappedHookPullRequest),
                                                unWrapHookPullRequest)
 import           Barrier.GitHub               (addStoryLinkComment, setHasStoryStatus,
                                                setMissingStoryStatus)
@@ -58,7 +59,7 @@ handlePullRequestAction pr = do
   let unwrappedPayload = unWrapHookPullRequest payload
   let targetRef = whPullReqTargetRef . whPullReqHead $ unwrappedPayload
   let storyURI = convert (extractStoryId targetRef) (T.unpack targetRef)
-  let links = [storyURI] <> extractLinks payload
+  let links = [storyURI] <> extractClubhouseLinks payload
   pure (setPullRequestStatus links unwrappedPayload)
   where
     convert
@@ -116,7 +117,6 @@ checkUpdatePullRequest config payload linkFromRefE linksFromBodyE = do
       _ <- checkerAndUpdater config payload stories
       pure ()
   where
-    -- getStoryLink :: (Show a, Monad m) => Either a (URIRef Absolute) -> m (ExceptT StoryError IO Story)
     getStoryLink (Left reason) = pure $ throwE $ StoryInvalidLinkError (show reason)
     getStoryLink (Right link)  = linkDebug link >> runReaderT (getStory link) config
 
