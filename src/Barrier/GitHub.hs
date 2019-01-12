@@ -131,8 +131,8 @@ readish :: Integral a => Text -> Maybe a
 readish s = either (const Nothing) (Just . fst) (decimal s)
 
 
-addStoryLinkComment :: (Show b) => AppConfig -> HookPullRequest -> [b] -> IO ()
-addStoryLinkComment conf pr links = do
+addStoryLinkComment :: (Show b) => AppConfig -> HookPullRequest -> b -> IO ()
+addStoryLinkComment conf pr story = do
   let auth' = GitHub.OAuth $ configGitHubToken conf
   let params = mkCommentParams pr
   content <-
@@ -142,5 +142,5 @@ addStoryLinkComment conf pr links = do
       (params ^. commentOwner)
       (params ^. commentRepo)
       (params ^. commentIssue)
-      (T.pack $ show links)
+      (T.pack $ show story)
   logDebug $ T.pack (show content)
