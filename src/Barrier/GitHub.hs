@@ -5,7 +5,7 @@
 
 module Barrier.GitHub where
 
-import           Barrier.Clubhouse                (Story)
+import           Barrier.Clubhouse                (Story, storyUrl)
 import           Barrier.Config                   (AppConfig, configGitHubToken)
 import           Control.Logger.Simple            (logDebug)
 import qualified Data.ByteString                  as B
@@ -24,7 +24,8 @@ import           GitHub.Data.Webhooks.Payload     (HookPullRequest, getUrl, whPu
 import qualified GitHub.Endpoints.Issues.Comments as GitHub
 import qualified GitHub.Endpoints.Repos.Statuses  as GitHub
 import           Lens.Micro.Platform              (makeLenses, (^.))
-import           URI.ByteString                   (parseURI, strictURIParserOptions, uriPath)
+import           URI.ByteString                   (parseURI, serializeURIRef',
+                                                   strictURIParserOptions, uriPath)
 
 
 data GitHubRequestParams = GitHubRequestParams
@@ -131,7 +132,7 @@ readish :: Integral a => Text -> Maybe a
 readish s = either (const Nothing) (Just . fst) (decimal s)
 
 
-addStoryLinkComment :: (Show b) => AppConfig -> HookPullRequest -> b -> IO ()
+addStoryLinkComment :: AppConfig -> HookPullRequest -> Story -> IO ()
 addStoryLinkComment conf pr story = do
   let auth' = GitHub.OAuth $ configGitHubToken conf
   let params = mkCommentParams pr
@@ -142,5 +143,5 @@ addStoryLinkComment conf pr story = do
       (params ^. commentOwner)
       (params ^. commentRepo)
       (params ^. commentIssue)
-      (T.pack $ show story)
+      (decodeUtf8 . serializeURIRef' $ storyUrl story)
   logDebug $ T.pack (show content)
