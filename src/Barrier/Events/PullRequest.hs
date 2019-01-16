@@ -110,7 +110,10 @@ checkUpdatePullRequest config payload linkFromRefE linksFromBodyE = do
   runExceptT refStoryLink >>= \case
     Right story  -> do
       setHasStoryStatus config payload story
-      when (null stories) $ addLink config payload story
+      -- FIXME before adding the link we need to check that the comments don't already include a
+      -- link. The PR data only includes the PR itself and so we will miss comments that include
+      -- the link
+      when (null stories) $ addStoryLinkComment config payload story
     Left err -> do
       (logDebug . T.pack . show) err
       mapM_ (logDebug . T.pack . show) errors
@@ -121,10 +124,6 @@ checkUpdatePullRequest config payload linkFromRefE linksFromBodyE = do
     getStoryLink (Right link)  = linkDebug link >> runReaderT (getStory link) config
 
     linkDebug link = logDebug ("Checking link: " <> T.pack (show link))
-
-
-addLink :: AppConfig -> HookPullRequest -> Story -> IO ()
-addLink config payload story = addStoryLinkComment config payload story
 
 
 checkerAndUpdater :: AppConfig

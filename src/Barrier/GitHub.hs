@@ -22,6 +22,7 @@ import           GitHub.Data.Webhooks.Payload     (HookPullRequest, getUrl, whPu
                                                    whPullReqTargetSha, whPullReqTargetUser,
                                                    whRepoName, whUserLogin)
 import qualified GitHub.Endpoints.Issues.Comments as GitHub
+import qualified GitHub.Endpoints.PullRequests    as GitHub
 import qualified GitHub.Endpoints.Repos.Statuses  as GitHub
 import           Lens.Micro.Platform              (makeLenses, (^.))
 import           URI.ByteString                   (parseURI, serializeURIRef',
@@ -139,6 +140,23 @@ addStoryLinkComment conf pr story = do
   content <-
     either show show <$>
     GitHub.createComment
+      auth'
+      (params ^. commentOwner)
+      (params ^. commentRepo)
+      (params ^. commentIssue)
+      (decodeUtf8 . serializeURIRef' $ storyUrl story)
+  logDebug $ T.pack (show content)
+
+
+updatePullRequest :: AppConfig -> HookPullRequest -> Story -> IO ()
+updatePullRequest conf pr story = do
+  let auth' = GitHub.OAuth $ configGitHubToken conf
+  let params = mkCommentParams pr
+
+  -- issueId = maybe (error "oh no") (GitHub.mkId (Proxy :: Proxy GitHub.PullRequest)) (getId segments)
+  content <-
+    either show show <$>
+    GitHub.updatePullRequest
       auth'
       (params ^. commentOwner)
       (params ^. commentRepo)
