@@ -15,6 +15,7 @@ import qualified Data.ByteString              as B
 import           Data.ByteString.Lazy         (toStrict)
 import           Data.Maybe                   (catMaybes, listToMaybe)
 import           Data.Monoid                  ((<>))
+import qualified GitHub.Data.PullRequests     as GitHub
 import           GitHub.Data.Webhooks         (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
 import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, PullRequestEvent,
                                                evPullReqPayload)
@@ -72,3 +73,10 @@ eventFromFixture = do
 
 payloadFromFixture :: IO HookPullRequest
 payloadFromFixture = evPullReqPayload <$> eventFromFixture
+
+
+pullRequestPayloadFromFixture :: IO GitHub.PullRequest
+pullRequestPayloadFromFixture = do
+  f <- readFixture "pull_request_payload.json"
+  let (Just pr) = decodeStrict f
+  pure pr

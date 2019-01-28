@@ -39,6 +39,7 @@ data GitHubRequestParams = GitHubRequestParams
 makeLenses ''GitHubRequestParams
 
 
+--------------------------------------------------------------------------------
 mkStatusParams :: HookPullRequest -> GitHubRequestParams
 mkStatusParams pr =
   let head' = whPullReqHead pr
@@ -48,26 +49,29 @@ mkStatusParams pr =
   in GitHubRequestParams {..}
 
 
-data GitHubCreateCommentRequestParams = GitHubCreateCommentRequestParams
+--------------------------------------------------------------------------------
+data GitHubCommentRequestParams = GitHubCommentRequestParams
   { _commentIssue :: GitHub.Id GitHub.Issue
   , _commentOwner :: GitHub.Name GitHub.Owner
   , _commentRepo  :: GitHub.Name GitHub.Repo
   } deriving (Show)
 
 
-makeLenses ''GitHubCreateCommentRequestParams
+makeLenses ''GitHubCommentRequestParams
 
 
-mkCommentParams :: HookPullRequest -> GitHubCreateCommentRequestParams
+--------------------------------------------------------------------------------
+mkCommentParams :: HookPullRequest -> GitHubCommentRequestParams
 mkCommentParams pr =
   let issueUrl = whPullReqIssueUrl pr
       head' = whPullReqHead pr
       _commentOwner = GitHub.mkOwnerName . whUserLogin $ whPullReqTargetUser head'
       _commentRepo = GitHub.mkRepoName . whRepoName $ whPullReqTargetRepo head'
       _commentIssue = getIssueId (encodeUtf8 $ getUrl issueUrl)
-  in GitHubCreateCommentRequestParams {..}
+  in GitHubCommentRequestParams {..}
 
 
+--------------------------------------------------------------------------------
 setHasStoryStatus :: AppConfig -> HookPullRequest -> Story -> IO ()
 setHasStoryStatus conf pr _story = do
   let auth' = GitHub.OAuth $ configGitHubToken conf
@@ -87,6 +91,7 @@ setHasStoryStatus conf pr _story = do
   logDebug $ T.pack (show content)
 
 
+--------------------------------------------------------------------------------
 setMissingStoryStatus :: AppConfig -> HookPullRequest -> IO ()
 setMissingStoryStatus conf pr = do
   let auth' = GitHub.OAuth $ configGitHubToken conf
@@ -106,6 +111,7 @@ setMissingStoryStatus conf pr = do
   logDebug $ T.pack (show content)
 
 
+--------------------------------------------------------------------------------
 statusesFor
   :: GitHub.Auth
   -> GitHub.Name GitHub.Owner
@@ -129,10 +135,12 @@ getIssueId url =
     getId _               = Nothing
 
 
+--------------------------------------------------------------------------------
 readish :: Integral a => Text -> Maybe a
 readish s = either (const Nothing) (Just . fst) (decimal s)
 
 
+--------------------------------------------------------------------------------
 addStoryLinkComment :: AppConfig -> HookPullRequest -> Story -> IO ()
 addStoryLinkComment conf pr story = do
   let auth' = GitHub.OAuth $ configGitHubToken conf
@@ -148,18 +156,28 @@ addStoryLinkComment conf pr story = do
   logDebug $ T.pack (show content)
 
 
-updatePullRequest :: AppConfig -> HookPullRequest -> Story -> IO ()
-updatePullRequest conf pr story = do
-  let auth' = GitHub.OAuth $ configGitHubToken conf
+--------------------------------------------------------------------------------
+getCommentsForPullRequest :: AppConfig
+                          -> HookPullRequest
+                          -> IO (Either GitHub.Error (Vector GitHub.IssueComment))
+getCommentsForPullRequest conf pr = do
+  let auth' = Just . GitHub.OAuth $ configGitHubToken conf
   let params = mkCommentParams pr
+  GitHub.comments' auth' (params ^. commentOwner) (params ^. commentRepo) (params ^. commentIssue)
 
-  -- issueId = maybe (error "oh no") (GitHub.mkId (Proxy :: Proxy GitHub.PullRequest)) (getId segments)
-  content <-
-    either show show <$>
-    GitHub.updatePullRequest
-      auth'
-      (params ^. commentOwner)
-      (params ^. commentRepo)
-      (params ^. commentIssue)
-      (decodeUtf8 . serializeURIRef' $ storyUrl story)
-  logDebug $ T.pack (show content)
+
+-- updatePullRequest :: AppConfig -> HookPullRequest -> Story -> IO ()
+-- updatePullRequest conf pr story = do
+--   let auth' = GitHub.OAuth $ configGitHubToken conf
+--   let params = mkCommentParams pr
+
+--   -- issueId = maybe (error "oh no") (GitHub.mkId (Proxy :: Proxy GitHub.PullRequest)) (getId segments)
+--   content <-
+--     either show show <$>
+--     GitHub.updatePullRequest
+--       auth'
+--       (params ^. commentOwner)
+--       (params ^. commentRepo)
+--       (params ^. commentThing)
+--       undefined
+--   logDebug $ T.pack (show content)

@@ -13,8 +13,8 @@ import           Barrier.Clubhouse            (Story, StoryError (StoryInvalidLi
 import           Barrier.Config               (AppConfig, readish)
 import           Barrier.Events.Types         (WrappedHook (WrappedHookPullRequest),
                                                unWrapHookPullRequest)
-import           Barrier.GitHub               (addStoryLinkComment, setHasStoryStatus,
-                                               setMissingStoryStatus)
+import           Barrier.GitHub               (addStoryLinkComment, getCommentsForPullRequest,
+                                               setHasStoryStatus, setMissingStoryStatus)
 import           Control.Error                (runExceptT, throwE)
 import           Control.Logger.Simple        (logDebug)
 import           Control.Monad                (when)
@@ -106,6 +106,8 @@ checkUpdatePullRequest config payload linkFromRefE linksFromBodyE = do
 
   storyLinksE <- mapM getStoryLink linksFromBodyE
   (errors, stories) <- fmap partitionEithers (traverse runExceptT storyLinksE)
+
+  let issueCommentsE = getCommentsForPullRequest config payload
 
   runExceptT refStoryLink >>= \case
     Right story  -> do
