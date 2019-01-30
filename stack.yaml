@@ -3,4 +3,6 @@ packages:
 - .
 extra-deps:
   - simple-logger-0.0.4
-  - github-webhooks-0.10.0
+  # - github-webhooks-0.10.0
+  - github: rob-b/github-webhooks
+    commit: ee178ea50d591e67e27af9a0c653126331fbd67e
