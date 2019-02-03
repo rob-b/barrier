@@ -1,10 +1,12 @@
 {-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
 module Barrier.GitHub where
 
+import           Barrier.Check                    (filterByDomain)
 import           Barrier.Clubhouse                (Story, storyUrl)
 import           Barrier.Config                   (AppConfig, configGitHubToken)
 import           Control.Logger.Simple            (logDebug)
@@ -17,6 +19,7 @@ import           Data.Text.Read                   (decimal)
 import           Data.Vector                      (Vector)
 import qualified GitHub.Auth                      as GitHub
 import qualified GitHub.Data                      as GitHub
+import           GitHub.Data.Issues               (issueCommentBody)
 import           GitHub.Data.Webhooks.Payload     (HookPullRequest, getUrl, whPullReqHead,
                                                    whPullReqIssueUrl, whPullReqTargetRepo,
                                                    whPullReqTargetSha, whPullReqTargetUser,
@@ -164,6 +167,14 @@ getCommentsForPullRequest conf pr = do
   let auth' = Just . GitHub.OAuth $ configGitHubToken conf
   let params = mkCommentParams pr
   GitHub.comments' auth' (params ^. commentOwner) (params ^. commentRepo) (params ^. commentIssue)
+
+
+umm config pr = getCommentsForPullRequest config pr >>= \case
+        Left err -> undefined
+        Right comments -> do
+          let xo b = filterByDomain b "app.clubhouse.io"
+          let bodies = concatMap (xo . issueCommentBody) comments
+          undefined
 
 
 -- updatePullRequest :: AppConfig -> HookPullRequest -> Story -> IO ()

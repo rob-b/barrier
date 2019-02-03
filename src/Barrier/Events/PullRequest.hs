@@ -7,7 +7,7 @@
 
 module Barrier.Events.PullRequest where
 
-import           Barrier.Check                (extractClubhouseLinks)
+import           Barrier.Check                (extractClubhouseLinks, filterByDomain)
 import           Barrier.Clubhouse            (Story, StoryError (StoryInvalidLinkError), getStory,
                                                mkClubhouseStoryUrl)
 import           Barrier.Config               (AppConfig, readish)
@@ -101,13 +101,13 @@ checkUpdatePullRequest
   -> Either URIParseError (URIRef Absolute)
   -> [Either URIParseError (URIRef Absolute)]
   -> IO ()
-checkUpdatePullRequest config payload linkFromRefE linksFromBodyE = do
+checkUpdatePullRequest config payload linkFromRefE linksFromPRDescE = do
   refStoryLink <- getStoryLink linkFromRefE
 
-  storyLinksE <- mapM getStoryLink linksFromBodyE
+  storyLinksE <- mapM getStoryLink linksFromPRDescE
   (errors, stories) <- fmap partitionEithers (traverse runExceptT storyLinksE)
 
-  let issueCommentsE = getCommentsForPullRequest config payload
+  issueCommentsE <- getCommentsForPullRequest config payload
 
   runExceptT refStoryLink >>= \case
     Right story  -> do
@@ -115,6 +115,13 @@ checkUpdatePullRequest config payload linkFromRefE linksFromBodyE = do
       -- FIXME before adding the link we need to check that the comments don't already include a
       -- link. The PR data only includes the PR itself and so we will miss comments that include
       -- the link
+      case issueCommentsE of
+        Left err       -> undefined
+        Right comments -> do
+
+          let xo b = filterByDomain b "app.clubhouse.io"
+          let bodies = concatMap (xo . issueCommentBody) comments
+          undefined
       when (null stories) $ addStoryLinkComment config payload story
     Left err -> do
       (logDebug . T.pack . show) err
