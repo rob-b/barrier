@@ -25,11 +25,11 @@ import           GitHub.Data.Webhooks.Payload     (HookPullRequest, getUrl, whPu
                                                    whPullReqTargetSha, whPullReqTargetUser,
                                                    whRepoName, whUserLogin)
 import qualified GitHub.Endpoints.Issues.Comments as GitHub
-import qualified GitHub.Endpoints.PullRequests    as GitHub
 import qualified GitHub.Endpoints.Repos.Statuses  as GitHub
 import           Lens.Micro.Platform              (makeLenses, (^.))
-import           URI.ByteString                   (parseURI, serializeURIRef',
-                                                   strictURIParserOptions, uriPath)
+import           URI.ByteString                   (Absolute, URIParseError, URIRef, parseURI,
+                                                   serializeURIRef', strictURIParserOptions,
+                                                   uriPath)
 
 
 data GitHubRequestParams = GitHubRequestParams
@@ -169,12 +169,13 @@ getCommentsForPullRequest conf pr = do
   GitHub.comments' auth' (params ^. commentOwner) (params ^. commentRepo) (params ^. commentIssue)
 
 
-umm config pr = getCommentsForPullRequest config pr >>= \case
-        Left err -> undefined
-        Right comments -> do
-          let xo b = filterByDomain b "app.clubhouse.io"
-          let bodies = concatMap (xo . issueCommentBody) comments
-          undefined
+umm :: AppConfig -> HookPullRequest -> IO [Either URIParseError (URIRef Absolute)]
+umm config pr =
+  getCommentsForPullRequest config pr >>= \case
+    Left _err -> undefined
+    Right comments -> do
+      let xo b = filterByDomain b "app.clubhouse.io"
+      pure $ concatMap (xo . issueCommentBody) comments
 
 
 -- updatePullRequest :: AppConfig -> HookPullRequest -> Story -> IO ()

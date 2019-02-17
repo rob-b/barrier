@@ -8,25 +8,25 @@
 module Barrier.Events.PullRequest where
 
 import           Barrier.Check                (extractClubhouseLinks, filterByDomain)
-import           Barrier.Clubhouse            (Story, StoryError (StoryInvalidLinkError), getStory,
-                                               mkClubhouseStoryUrl)
+import           Barrier.Clubhouse            (Story, getStory, mkClubhouseStoryUrl)
 import           Barrier.Config               (AppConfig, readish)
 import           Barrier.Events.Types         (WrappedHook (WrappedHookPullRequest),
                                                unWrapHookPullRequest)
 import           Barrier.GitHub               (addStoryLinkComment, getCommentsForPullRequest,
                                                setHasStoryStatus, setMissingStoryStatus)
-import           Control.Error                (runExceptT, throwE)
-import           Control.Logger.Simple        (logDebug)
+import           Control.Error                (runExceptT)
+import           Control.Logger.Simple        (logDebug, logError)
 import           Control.Monad                (when)
 import           Control.Monad.Reader         (runReaderT)
 import           Data.Aeson                   (Value, object, (.=))
-import           Data.Either                  (partitionEithers)
+import           Data.Either                  (partitionEithers, rights)
 import           Data.Maybe                   (listToMaybe)
 import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
 import qualified Data.Text                    as T
 import qualified Data.Vector                  as V
 import           Debug.Trace                  (trace)
+import           GitHub.Data.Issues           (issueCommentBody)
 import           GitHub.Data.Webhooks.Events  (PullRequestEvent, PullRequestEventAction (PullRequestActionOther, PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
                                                evPullReqAction, evPullReqPayload)
 import           GitHub.Data.Webhooks.Payload (HookPullRequest, whPullReqHead, whPullReqTargetRef)
@@ -60,7 +60,8 @@ handlePullRequestAction pr = do
   let targetRef = whPullReqTargetRef . whPullReqHead $ unwrappedPayload
   let storyURI = convert (extractStoryId targetRef) (T.unpack targetRef)
   let links = [storyURI] <> extractClubhouseLinks payload
-  pure (setPullRequestStatus links unwrappedPayload)
+  let parsed = rights links
+  pure (setPullRequestStatus parsed unwrappedPayload)
   where
     convert
       :: Show a
@@ -70,7 +71,7 @@ handlePullRequestAction pr = do
     convert (Just x) _ = mkClubhouseStoryUrl x
 
 
-setPullRequestStatus :: [Either URIParseError (URIRef Absolute)]
+setPullRequestStatus :: [URIRef Absolute]
                      -> HookPullRequest
                      -> AppConfig
                      -> IO ()
@@ -98,8 +99,8 @@ extractStoryId value = extract ((listToMaybe . scan regex) value) >>= readish
 checkUpdatePullRequest
   :: AppConfig
   -> HookPullRequest
-  -> Either URIParseError (URIRef Absolute)
-  -> [Either URIParseError (URIRef Absolute)]
+  -> URIRef Absolute
+  -> [URIRef Absolute]
   -> IO ()
 checkUpdatePullRequest config payload linkFromRefE linksFromPRDescE = do
   refStoryLink <- getStoryLink linkFromRefE
@@ -116,23 +117,36 @@ checkUpdatePullRequest config payload linkFromRefE linksFromPRDescE = do
       -- link. The PR data only includes the PR itself and so we will miss comments that include
       -- the link
       case issueCommentsE of
-        Left err       -> undefined
+        Left err       -> logError $ T.pack ("Error retrieving comments: " <> show err)
         Right comments -> do
 
           let xo b = filterByDomain b "app.clubhouse.io"
-          let bodies = concatMap (xo . issueCommentBody) comments
-          undefined
-      when (null stories) $ addStoryLinkComment config payload story
+          let bodies = rights $ concatMap (xo . issueCommentBody) comments
+          bodiesE <- mapM getStoryLink bodies
+          (bodyErrors, bodyStories) <- fmap partitionEithers (traverse runExceptT bodiesE)
+
+          mapM_ (logDebug . T.pack . show) bodyErrors
+
+          -- no stories in either the description or the comments? Add a comment with the link
+          when (null (stories <> bodyStories)) $ addStoryLinkComment config payload story
+
+    -- we could not extract a story link from the commit ref, lets try getting a link from the PR
+    -- description instead
     Left err -> do
+      -- log the error encountered while extracting a link from the ref
       (logDebug . T.pack . show) err
+
+      -- log any errors encountered while extract links from the description
       mapM_ (logDebug . T.pack . show) errors
+
+      -- set an appropriate status for our list of stories
       _ <- checkerAndUpdater config payload stories
       pure ()
   where
-    getStoryLink (Left reason) = pure $ throwE $ StoryInvalidLinkError (show reason)
-    getStoryLink (Right link)  = linkDebug link >> runReaderT (getStory link) config
-
     linkDebug link = logDebug ("Checking link: " <> T.pack (show link))
+
+    -- getStoryLink (Left reason) = pure $ throwE $ StoryInvalidLinkError (show reason)
+    getStoryLink link  = linkDebug link >> runReaderT (getStory link) config
 
 
 checkerAndUpdater :: AppConfig
