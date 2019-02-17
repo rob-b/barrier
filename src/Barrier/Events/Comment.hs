@@ -9,7 +9,6 @@ import           Barrier.Check                (extractClubhouseLinks)
 import           Barrier.Config               (AppConfig)
 import           Barrier.Events.Types         (WrappedHook (WrappedHookIssueComment))
 import           Data.Aeson                   (Value, object, (.=))
-import           Data.Either                  (rights)
 import qualified Data.Vector                  as V
 import           Debug.Trace                  (traceShow)
 import           GitHub.Data.Webhooks.Events  (IssueCommentEvent,
@@ -29,7 +28,7 @@ handleIssueCommentEventAction :: IssueCommentEvent -> Maybe (AppConfig -> IO ())
 handleIssueCommentEventAction issue = do
   payload <- getPayLoadFromIssue issue
   let allLinks = extractClubhouseLinks payload
-  let links = traceShow allLinks (rights allLinks)
+  let links = traceShow allLinks allLinks
   traceShow links $ pure undefined
 
 

@@ -6,7 +6,6 @@
 
 module Barrier.GitHub where
 
-import           Barrier.Check                    (filterByDomain)
 import           Barrier.Clubhouse                (Story, storyUrl)
 import           Barrier.Config                   (AppConfig, configGitHubToken)
 import           Control.Logger.Simple            (logDebug)
@@ -19,7 +18,6 @@ import           Data.Text.Read                   (decimal)
 import           Data.Vector                      (Vector)
 import qualified GitHub.Auth                      as GitHub
 import qualified GitHub.Data                      as GitHub
-import           GitHub.Data.Issues               (issueCommentBody)
 import           GitHub.Data.Webhooks.Payload     (HookPullRequest, getUrl, whPullReqHead,
                                                    whPullReqIssueUrl, whPullReqTargetRepo,
                                                    whPullReqTargetSha, whPullReqTargetUser,
@@ -27,9 +25,8 @@ import           GitHub.Data.Webhooks.Payload     (HookPullRequest, getUrl, whPu
 import qualified GitHub.Endpoints.Issues.Comments as GitHub
 import qualified GitHub.Endpoints.Repos.Statuses  as GitHub
 import           Lens.Micro.Platform              (makeLenses, (^.))
-import           URI.ByteString                   (Absolute, URIParseError, URIRef, parseURI,
-                                                   serializeURIRef', strictURIParserOptions,
-                                                   uriPath)
+import           URI.ByteString                   (parseURI, serializeURIRef',
+                                                   strictURIParserOptions, uriPath)
 
 
 data GitHubRequestParams = GitHubRequestParams
@@ -167,15 +164,6 @@ getCommentsForPullRequest conf pr = do
   let auth' = Just . GitHub.OAuth $ configGitHubToken conf
   let params = mkCommentParams pr
   GitHub.comments' auth' (params ^. commentOwner) (params ^. commentRepo) (params ^. commentIssue)
-
-
-umm :: AppConfig -> HookPullRequest -> IO [Either URIParseError (URIRef Absolute)]
-umm config pr =
-  getCommentsForPullRequest config pr >>= \case
-    Left _err -> undefined
-    Right comments -> do
-      let xo b = filterByDomain b "app.clubhouse.io"
-      pure $ concatMap (xo . issueCommentBody) comments
 
 
 -- updatePullRequest :: AppConfig -> HookPullRequest -> Story -> IO ()

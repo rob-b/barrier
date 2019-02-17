@@ -5,6 +5,7 @@ module Barrier.Check
   , filterByDomain
   , splitLines
   , extractClubhouseLinks
+  , extractClubhouseLinks2
   ) where
 
 import           Barrier.Clubhouse            (webappURIRefToApiUrl)
@@ -17,9 +18,8 @@ import qualified Data.Text                    as T
 import           Data.Text.Encoding           (encodeUtf8)
 import           GitHub.Data.Webhooks.Payload (whIssueCommentBody, whPullReqBody)
 import           Lens.Micro.Platform          ((^?), _Just)
-import           URI.ByteString               (Absolute, URIParseError, URIRef, authorityHostL,
-                                               authorityL, hostBSL, parseURI,
-                                               strictURIParserOptions)
+import           URI.ByteString               (Absolute, URIRef, authorityHostL, authorityL,
+                                               hostBSL, parseURI, strictURIParserOptions)
 
 
 getHookBody :: WrappedHook -> Text
@@ -29,14 +29,18 @@ getHookBody hook
   | otherwise = ""
 
 
-extractClubhouseLinks :: WrappedHook -> [Either URIParseError (URIRef Absolute)]
-extractClubhouseLinks hook = filterByDomain (getHookBody hook) "app.clubhouse.io"
+extractClubhouseLinks :: WrappedHook -> [URIRef Absolute]
+extractClubhouseLinks hook = extractClubhouseLinks2 (getHookBody hook)
 
 
-filterByDomain :: Text -> ByteString -> [Either URIParseError (URIRef Absolute)]
-filterByDomain s domain =
+extractClubhouseLinks2 :: Text -> [URIRef Absolute]
+extractClubhouseLinks2 hook = filterByDomain "app.clubhouse.io" $ extractUrls hook
+
+
+filterByDomain :: ByteString -> [URIRef Absolute] -> [URIRef Absolute]
+filterByDomain domain urls =
   let predicate u = u ^? authorityL . _Just . authorityHostL . hostBSL == Just domain
-  in [webappURIRefToApiUrl x | x <- extractUrls s, predicate x]
+  in rights [webappURIRefToApiUrl x | x <- urls, predicate x]
 
 
 extractUrls :: Text -> [URIRef Absolute]

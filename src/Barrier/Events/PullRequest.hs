@@ -7,7 +7,7 @@
 
 module Barrier.Events.PullRequest where
 
-import           Barrier.Check                (extractClubhouseLinks, filterByDomain)
+import           Barrier.Check                (extractClubhouseLinks, extractClubhouseLinks2)
 import           Barrier.Clubhouse            (Story, getStory, mkClubhouseStoryUrl)
 import           Barrier.Config               (AppConfig, readish)
 import           Barrier.Events.Types         (WrappedHook (WrappedHookPullRequest),
@@ -19,7 +19,7 @@ import           Control.Logger.Simple        (logDebug, logError)
 import           Control.Monad                (when)
 import           Control.Monad.Reader         (runReaderT)
 import           Data.Aeson                   (Value, object, (.=))
-import           Data.Either                  (partitionEithers, rights)
+import           Data.Either                  (partitionEithers)
 import           Data.Maybe                   (listToMaybe)
 import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
@@ -31,7 +31,7 @@ import           GitHub.Data.Webhooks.Events  (PullRequestEvent, PullRequestEven
                                                evPullReqAction, evPullReqPayload)
 import           GitHub.Data.Webhooks.Payload (HookPullRequest, whPullReqHead, whPullReqTargetRef)
 import           Text.Regex.PCRE.Heavy        (re, scan)
-import           URI.ByteString               (Absolute, URIParseError (OtherError), URIRef)
+import           URI.ByteString               (Absolute, URIRef)
 
 
 -- | Given an PullRequestEvent, extract its inner payload
@@ -59,16 +59,14 @@ handlePullRequestAction pr = do
   let unwrappedPayload = unWrapHookPullRequest payload
   let targetRef = whPullReqTargetRef . whPullReqHead $ unwrappedPayload
   let storyURI = convert (extractStoryId targetRef) (T.unpack targetRef)
-  let links = [storyURI] <> extractClubhouseLinks payload
-  let parsed = rights links
-  pure (setPullRequestStatus parsed unwrappedPayload)
+  let links = storyURI <> extractClubhouseLinks payload
+  pure (setPullRequestStatus links unwrappedPayload)
   where
     convert
       :: Show a
-      => Maybe a -> String -> Either URIParseError (URIRef Absolute)
-    convert Nothing ref =
-      Left $ OtherError ("Could not determine story id from branch name: " <> ref)
-    convert (Just x) _ = mkClubhouseStoryUrl x
+      => Maybe a -> String -> [URIRef Absolute]
+    convert Nothing _  = []
+    convert (Just x) _ = either (const []) (\u -> [u]) (mkClubhouseStoryUrl x)
 
 
 setPullRequestStatus :: [URIRef Absolute]
@@ -120,8 +118,7 @@ checkUpdatePullRequest config payload linkFromRefE linksFromPRDescE = do
         Left err       -> logError $ T.pack ("Error retrieving comments: " <> show err)
         Right comments -> do
 
-          let xo b = filterByDomain b "app.clubhouse.io"
-          let bodies = rights $ concatMap (xo . issueCommentBody) comments
+          let bodies = concatMap extractClubhouseLinks2 (fmap issueCommentBody comments)
           bodiesE <- mapM getStoryLink bodies
           (bodyErrors, bodyStories) <- fmap partitionEithers (traverse runExceptT bodiesE)
 
