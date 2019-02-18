@@ -43,7 +43,7 @@ import           URI.ByteString          (Absolute, URIParseError (OtherError), 
 
 newtype ClubhouseLink = ClubhouseLink
   { unClubhouseLink :: URIRef Absolute
-  }
+  } deriving (Show)
 
 
 noVerifyTlsManagerSettings :: Client.ManagerSettings
@@ -167,27 +167,25 @@ mapLeft _ (Right x) = Right x
 
 
 mkClubhouseStoryUrl :: Show a => a -> Either URIParseError ClubhouseLink
-mkClubhouseStoryUrl storyID =
-  parseURI strictURIParserOptions $
-  B.intercalate "" ["https://api.clubhouse.io/api/v2/stories/", C8.pack $ show storyID]
+mkClubhouseStoryUrl storyID = ClubhouseLink <$> parseURI strictURIParserOptions (B.intercalate "" ["https://api.clubhouse.io/api/v2/stories/", C8.pack $ show storyID])
 
 
 sampleUrl :: ByteString
 sampleUrl = "https://app.clubhouse.io/zerodeposit/story/2944/create-contact-form-using-netlify"
 
 
-webappUrlToApiUrl :: ByteString -> Either URIParseError (URIRef Absolute)
+webappUrlToApiUrl :: ByteString -> Either URIParseError ClubhouseLink
 webappUrlToApiUrl url =
   case parseURI strictURIParserOptions url of
     Left reason -> Left reason
     Right url'  -> webappURIRefToApiUrl url'
 
 
-webappURIRefToApiUrl :: URIRef Absolute -> Either URIParseError (URIRef Absolute)
+webappURIRefToApiUrl :: URIRef Absolute -> Either URIParseError ClubhouseLink
 webappURIRefToApiUrl url = response . getId $ C.split '/' (url ^. pathL)
   where
     getId (_:_:_:x:_) = readish (decodeUtf8 x)
     getId _           = Nothing
-    response :: Maybe Integer -> Either URIParseError (URIRef Absolute)
+    response :: Maybe Integer -> Either URIParseError ClubhouseLink
     response Nothing    = Left $ OtherError ("Could not find story id in " <> show url)
     response (Just sid) = mkClubhouseStoryUrl sid

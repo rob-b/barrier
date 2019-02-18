@@ -34,11 +34,10 @@ extractClubhouseLinks hook = extractClubhouseLinks2 (getHookBody hook)
 
 
 extractClubhouseLinks2 :: Text -> [ClubhouseLink]
-extractClubhouseLinks2 hook =
-  fmap ClubhouseLink $ filterByDomain "app.clubhouse.io" $ extractUrls hook
+extractClubhouseLinks2 hook = filterByDomain "app.clubhouse.io" $ extractUrls hook
 
 
-filterByDomain :: ByteString -> [URIRef Absolute] -> [URIRef Absolute]
+filterByDomain :: ByteString -> [URIRef Absolute] -> [ClubhouseLink]
 filterByDomain domain urls =
   let predicate u = u ^? authorityL . _Just . authorityHostL . hostBSL == Just domain
   in rights [webappURIRefToApiUrl x | x <- urls, predicate x]
