@@ -41,6 +41,11 @@ import           URI.ByteString          (Absolute, URIParseError (OtherError), 
                                           pathL, serializeURIRef', strictURIParserOptions)
 
 
+newtype ClubhouseLink = ClubhouseLink
+  { unClubhouseLink :: URIRef Absolute
+  }
+
+
 noVerifyTlsManagerSettings :: Client.ManagerSettings
 noVerifyTlsManagerSettings =
   mkManagerSettings
@@ -121,8 +126,8 @@ data StoryError
   deriving (Show)
 
 
-getStory :: MonadReader AppConfig m => URIRef Absolute -> m (ExceptT StoryError IO Story)
-getStory url = do
+getStory :: MonadReader AppConfig m => ClubhouseLink -> m (ExceptT StoryError IO Story)
+getStory (ClubhouseLink url) = do
   config <- ask
   case parseUrlHttps $ serializeURIRef' url of
     Nothing ->
@@ -161,7 +166,7 @@ mapLeft f (Left x)  = Left $ f x
 mapLeft _ (Right x) = Right x
 
 
-mkClubhouseStoryUrl :: Show a => a -> Either URIParseError (URIRef Absolute)
+mkClubhouseStoryUrl :: Show a => a -> Either URIParseError ClubhouseLink
 mkClubhouseStoryUrl storyID =
   parseURI strictURIParserOptions $
   B.intercalate "" ["https://api.clubhouse.io/api/v2/stories/", C8.pack $ show storyID]

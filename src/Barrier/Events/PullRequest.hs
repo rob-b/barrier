@@ -8,25 +8,26 @@
 module Barrier.Events.PullRequest where
 
 import           Barrier.Check                (extractClubhouseLinks, extractClubhouseLinks2)
-import           Barrier.Clubhouse            (Story, getStory, mkClubhouseStoryUrl)
+import           Barrier.Clubhouse            (ClubhouseLink (ClubhouseLink), Story, StoryError,
+                                               getStory, mkClubhouseStoryUrl, unClubhouseLink)
 import           Barrier.Config               (AppConfig, readish)
 import           Barrier.Events.Types         (WrappedHook (WrappedHookPullRequest),
                                                unWrapHookPullRequest)
 import           Barrier.GitHub               (addStoryLinkComment, getCommentsForPullRequest,
                                                setHasStoryStatus, setMissingStoryStatus)
-import           Control.Error                (runExceptT)
+import           Control.Error                (ExceptT, runExceptT)
 import           Control.Logger.Simple        (logDebug, logError)
 import           Control.Monad                (when)
 import           Control.Monad.Reader         (runReaderT)
 import           Data.Aeson                   (Value, object, (.=))
-import           Data.Either                  (partitionEithers)
+import           Data.Either                  (partitionEithers, rights)
 import           Data.Maybe                   (listToMaybe)
 import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
 import qualified Data.Text                    as T
 import qualified Data.Vector                  as V
 import           Debug.Trace                  (trace)
-import           GitHub.Data.Issues           (issueCommentBody)
+import           GitHub.Data.Issues           (IssueComment, issueCommentBody)
 import           GitHub.Data.Webhooks.Events  (PullRequestEvent, PullRequestEventAction (PullRequestActionOther, PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
                                                evPullReqAction, evPullReqPayload)
 import           GitHub.Data.Webhooks.Payload (HookPullRequest, whPullReqHead, whPullReqTargetRef)
@@ -64,18 +65,18 @@ handlePullRequestAction pr = do
   where
     convert
       :: Show a
-      => Maybe a -> String -> [URIRef Absolute]
+      => Maybe a -> String -> [ClubhouseLink]
     convert Nothing _  = []
-    convert (Just x) _ = either (const []) (\u -> [u]) (mkClubhouseStoryUrl x)
+    convert (Just x) _ = either (const []) (:[]) (mkClubhouseStoryUrl x)
 
 
-setPullRequestStatus :: [URIRef Absolute]
+setPullRequestStatus :: [ClubhouseLink]
                      -> HookPullRequest
                      -> AppConfig
                      -> IO ()
 setPullRequestStatus [] payload config = setMissingStoryStatus config payload
 setPullRequestStatus (link:links) payload config =
-  trace "checking and updating" (checkUpdatePullRequest config payload link links)
+  trace "checking and updating" (checkUpdatePullRequest config payload (unClubhouseLink link) (fmap unClubhouseLink links))
 
 
 -- | Handle the special case of a "synchronize" PullRequestEvent
@@ -119,7 +120,7 @@ checkUpdatePullRequest config payload linkFromRefE linksFromPRDescE = do
         Right comments -> do
 
           let bodies = concatMap extractClubhouseLinks2 (fmap issueCommentBody comments)
-          bodiesE <- mapM getStoryLink bodies
+          bodiesE <- mapM getStoryLink (fmap unClubhouseLink bodies)
           (bodyErrors, bodyStories) <- fmap partitionEithers (traverse runExceptT bodiesE)
 
           mapM_ (logDebug . T.pack . show) bodyErrors
@@ -143,7 +144,7 @@ checkUpdatePullRequest config payload linkFromRefE linksFromPRDescE = do
     linkDebug link = logDebug ("Checking link: " <> T.pack (show link))
 
     -- getStoryLink (Left reason) = pure $ throwE $ StoryInvalidLinkError (show reason)
-    getStoryLink link  = linkDebug link >> runReaderT (getStory link) config
+    getStoryLink link  = linkDebug link >> runReaderT (getStory (ClubhouseLink link)) config
 
 
 checkerAndUpdater :: AppConfig
@@ -155,3 +156,21 @@ checkerAndUpdater config payload stories = do
   where
     setStatus (story:_) = setHasStoryStatus config payload story
     setStatus []        = setMissingStoryStatus config payload
+
+
+getLinksOrDieTrying :: AppConfig -> HookPullRequest -> [ClubhouseLink] -> IO (Either () [Story])
+getLinksOrDieTrying config payload links = do
+  sts <- mapM getStoryForLink links
+  stories <- rights <$> traverse runExceptT sts
+  issueCommentsE <- getCommentsForPullRequest config payload
+  case issueCommentsE of
+    Left err -> pure $ Right stories
+    Right comments -> do
+      let bodies = concatMap extractClubhouseLinks2 (fmap issueCommentBody comments)
+      bodiesE <- mapM getStoryForLink bodies
+      bodies' <- runExceptT bodiesE
+      pure. Right $ stories <> bodies'
+  where
+    linkDebug link = logDebug ("Checking link: " <> T.pack (show link))
+    getStoryForLink :: ClubhouseLink -> m (ExceptT StoryError IO Story)
+    getStoryForLink l  = linkDebug l >> runReaderT (getStory l) config

@@ -8,7 +8,7 @@ module Barrier.Check
   , extractClubhouseLinks2
   ) where
 
-import           Barrier.Clubhouse            (webappURIRefToApiUrl)
+import           Barrier.Clubhouse            (ClubhouseLink (ClubhouseLink), webappURIRefToApiUrl)
 import           Barrier.Events.Types         (WrappedHook (WrappedHookIssueComment, WrappedHookPullRequest))
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
@@ -29,12 +29,13 @@ getHookBody hook
   | otherwise = ""
 
 
-extractClubhouseLinks :: WrappedHook -> [URIRef Absolute]
+extractClubhouseLinks :: WrappedHook -> [ClubhouseLink]
 extractClubhouseLinks hook = extractClubhouseLinks2 (getHookBody hook)
 
 
-extractClubhouseLinks2 :: Text -> [URIRef Absolute]
-extractClubhouseLinks2 hook = filterByDomain "app.clubhouse.io" $ extractUrls hook
+extractClubhouseLinks2 :: Text -> [ClubhouseLink]
+extractClubhouseLinks2 hook =
+  fmap ClubhouseLink $ filterByDomain "app.clubhouse.io" $ extractUrls hook
 
 
 filterByDomain :: ByteString -> [URIRef Absolute] -> [URIRef Absolute]
