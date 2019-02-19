@@ -18,6 +18,7 @@ import           Barrier.GitHub               (addStoryLinkComment, getCommentsF
 import           Control.Error                (ExceptT, runExceptT)
 import           Control.Logger.Simple        (logDebug, logError)
 import           Control.Monad                (when)
+import           Control.Monad.IO.Class       (MonadIO)
 import           Control.Monad.Reader         (runReaderT)
 import           Data.Aeson                   (Value, object, (.=))
 import           Data.Either                  (partitionEithers, rights)
@@ -27,7 +28,7 @@ import           Data.Text                    (Text)
 import qualified Data.Text                    as T
 import qualified Data.Vector                  as V
 import           Debug.Trace                  (trace)
-import           GitHub.Data.Issues           (IssueComment, issueCommentBody)
+import           GitHub.Data.Issues           (issueCommentBody)
 import           GitHub.Data.Webhooks.Events  (PullRequestEvent, PullRequestEventAction (PullRequestActionOther, PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
                                                evPullReqAction, evPullReqPayload)
 import           GitHub.Data.Webhooks.Payload (HookPullRequest, whPullReqHead, whPullReqTargetRef)
@@ -164,13 +165,14 @@ getLinksOrDieTrying config payload links = do
   stories <- rights <$> traverse runExceptT sts
   issueCommentsE <- getCommentsForPullRequest config payload
   case issueCommentsE of
-    Left err -> pure $ Right stories
+    Left _ -> pure $ Right stories
     Right comments -> do
       let bodies = concatMap extractClubhouseLinks2 (fmap issueCommentBody comments)
       bodiesE <- mapM getStoryForLink bodies
-      bodies' <- runExceptT bodiesE
+      (_errors',bodies') <- partitionEithers <$> traverse runExceptT bodiesE
       pure. Right $ stories <> bodies'
   where
+    linkDebug :: (Show a, MonadIO m) => a -> m ()
     linkDebug link = logDebug ("Checking link: " <> T.pack (show link))
-    getStoryForLink :: ClubhouseLink -> m (ExceptT StoryError IO Story)
+    getStoryForLink :: (MonadIO m) => ClubhouseLink -> m (ExceptT StoryError IO Story)
     getStoryForLink l  = linkDebug l >> runReaderT (getStory l) config
