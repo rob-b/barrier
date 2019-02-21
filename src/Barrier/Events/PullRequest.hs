@@ -165,11 +165,14 @@ getLinksOrDieTrying config payload links = do
   stories <- rights <$> traverse runExceptT sts
   issueCommentsE <- getCommentsForPullRequest config payload
   case issueCommentsE of
-    Left _ -> pure $ Right stories
+    Left err -> do
+      logDebug $ T.pack (show err)
+      pure $ Right stories
     Right comments -> do
       let bodies = concatMap extractClubhouseLinks2 (fmap issueCommentBody comments)
       bodiesE <- mapM getStoryForLink bodies
-      (_errors',bodies') <- partitionEithers <$> traverse runExceptT bodiesE
+      (errors',bodies') <- partitionEithers <$> traverse runExceptT bodiesE
+      logDebug . T.pack $ show errors'
       pure. Right $ stories <> bodies'
   where
     linkDebug :: (Show a, MonadIO m) => a -> m ()
