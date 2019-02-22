@@ -21,8 +21,8 @@ import           Control.Monad                (when)
 import           Control.Monad.IO.Class       (MonadIO)
 import           Control.Monad.Reader         (runReaderT)
 import           Data.Aeson                   (Value, object, (.=))
-import           Data.Either                  (partitionEithers, rights)
-import           Data.Maybe                   (listToMaybe)
+import           Data.Either                  (lefts, partitionEithers)
+import           Data.Maybe                   (listToMaybe, maybeToList)
 import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
 import qualified Data.Text                    as T
@@ -58,17 +58,20 @@ handlePullRequestEvent event =
 handlePullRequestAction :: PullRequestEvent -> Maybe (AppConfig -> IO ())
 handlePullRequestAction pr = do
   payload <- getPayLoadFromPr pr
-  let unwrappedPayload = unWrapHookPullRequest payload
+  let storyURI = getStoryLinkFromHook payload
+  let links = maybeToList storyURI <> extractClubhouseLinks payload
+  pure (setPullRequestStatus links (unWrapHookPullRequest payload))
+
+
+getStoryLinkFromHook :: WrappedHook -> Maybe ClubhouseLink
+getStoryLinkFromHook hook = do
+  let unwrappedPayload = unWrapHookPullRequest hook
   let targetRef = whPullReqTargetRef . whPullReqHead $ unwrappedPayload
-  let storyURI = convert (extractStoryId targetRef) (T.unpack targetRef)
-  let links = storyURI <> extractClubhouseLinks payload
-  pure (setPullRequestStatus links unwrappedPayload)
+  convert (extractStoryId targetRef) (T.unpack targetRef)
   where
-    convert
-      :: Show a
-      => Maybe a -> String -> [ClubhouseLink]
-    convert Nothing _  = []
-    convert (Just x) _ = either (const []) (:[]) (mkClubhouseStoryUrl x)
+    convert :: Show a => Maybe a -> String -> Maybe ClubhouseLink
+    convert Nothing _  = Nothing
+    convert (Just x) _ = either (const Nothing) Just (mkClubhouseStoryUrl x)
 
 
 setPullRequestStatus :: [ClubhouseLink]
@@ -159,23 +162,31 @@ checkerAndUpdater config payload stories = do
     setStatus []        = setMissingStoryStatus config payload
 
 
-getLinksOrDieTrying :: AppConfig -> HookPullRequest -> [ClubhouseLink] -> IO (Either () [Story])
+sequenceEithers :: [Either a b] -> Either [a] [b]
+sequenceEithers xs =
+    case sequence xs of
+      Right values -> Right values
+      Left _       -> Left (lefts xs)
+
+
+getLinksOrDieTrying ::
+     AppConfig -> HookPullRequest -> [ClubhouseLink] -> IO (Either [StoryError] [Story])
 getLinksOrDieTrying config payload links = do
   sts <- mapM getStoryForLink links
-  stories <- rights <$> traverse runExceptT sts
+  stories <- traverse runExceptT sts
   issueCommentsE <- getCommentsForPullRequest config payload
   case issueCommentsE of
     Left err -> do
       logDebug $ T.pack (show err)
-      pure $ Right stories
+      pure $ sequenceEithers stories
     Right comments -> do
       let bodies = concatMap extractClubhouseLinks2 (fmap issueCommentBody comments)
       bodiesE <- mapM getStoryForLink bodies
-      (errors',bodies') <- partitionEithers <$> traverse runExceptT bodiesE
+      (errors', bodies') <- partitionEithers <$> traverse runExceptT bodiesE
       logDebug . T.pack $ show errors'
-      pure. Right $ stories <> bodies'
+      pure . sequenceEithers $ stories <> fmap Right bodies'
   where
     linkDebug :: (Show a, MonadIO m) => a -> m ()
     linkDebug link = logDebug ("Checking link: " <> T.pack (show link))
     getStoryForLink :: (MonadIO m) => ClubhouseLink -> m (ExceptT StoryError IO Story)
-    getStoryForLink l  = linkDebug l >> runReaderT (getStory l) config
+    getStoryForLink l = linkDebug l >> runReaderT (getStory l) config
