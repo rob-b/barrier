@@ -66,7 +66,7 @@ readFixture name = B.readFile $ "fixtures/" <> name
 
 eventFromFixture :: IO PullRequestEvent
 eventFromFixture = do
-  f <- readFixture "pull_request_event.json"
+  f <- readFixture "zd_pull_request_event.json"
   let (Just event) = selectEventType "pull_request" f
   pure $ unWrapPullRequest event
 

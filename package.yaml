@@ -46,6 +46,7 @@ library:
   - microlens-platform
   - mtl
   - pcre-heavy
+  - random
   - req
   - safe-exceptions
   - simple-logger

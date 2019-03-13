@@ -25,6 +25,7 @@ import           GitHub.Data.Webhooks.Payload     (HookPullRequest, getUrl, whPu
 import qualified GitHub.Endpoints.Issues.Comments as GitHub
 import qualified GitHub.Endpoints.Repos.Statuses  as GitHub
 import           Lens.Micro.Platform              (makeLenses, (^.))
+import           System.Random                    (randomRIO)
 import           URI.ByteString                   (parseURI, serializeURIRef',
                                                    strictURIParserOptions, uriPath)
 
@@ -108,6 +109,7 @@ setMissingStoryStatus conf pr = do
          Nothing
          (Just "Cannot find matching story.")
          (Just "Barrier story check"))
+  _ <- randomWarning conf pr
   logDebug $ T.pack (show content)
 
 
@@ -164,6 +166,27 @@ getCommentsForPullRequest conf pr = do
   let auth' = Just . GitHub.OAuth $ configGitHubToken conf
   let params = mkCommentParams pr
   GitHub.comments' auth' (params ^. commentOwner) (params ^. commentRepo) (params ^. commentIssue)
+
+
+randomWarning :: AppConfig -> HookPullRequest -> IO ()
+randomWarning conf pr = do
+  let auth' = GitHub.OAuth $ configGitHubToken conf
+  let params = mkCommentParams pr
+  value <- randomRIO (1, 7) :: IO Int
+  if value == 3
+    then filmReference auth' params
+    else pure ()
+  where
+    filmReference auth' params = do
+      _ <-
+        either show show <$>
+        GitHub.createComment
+          auth'
+          (params ^. commentOwner)
+          (params ^. commentRepo)
+          (params ^. commentIssue)
+          "Your move, creep"
+      pure ()
 
 
 -- updatePullRequest :: AppConfig -> HookPullRequest -> Story -> IO ()
