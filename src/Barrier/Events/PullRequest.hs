@@ -28,12 +28,11 @@ import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
 import qualified Data.Text                    as T
 import qualified Data.Vector                  as V
-import           Debug.Trace                  (trace)
 import           GitHub.Data.Issues           (issueCommentBody)
 import           GitHub.Data.Webhooks.Events  (PullRequestEvent, PullRequestEventAction (PullRequestActionOther, PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
                                                evPullReqAction, evPullReqPayload)
-import           GitHub.Data.Webhooks.Payload (HookPullRequest, whPullReqHead, whPullReqHtmlUrl,
-                                               whPullReqTargetRef)
+import           GitHub.Data.Webhooks.Payload (HookPullRequest, getUrl, whPullReqHead,
+                                               whPullReqHtmlUrl, whPullReqTargetRef)
 import           Text.Regex.PCRE.Heavy        (re, scan)
 import           URI.ByteString               (Absolute, URIRef)
 
@@ -89,7 +88,7 @@ setPullRequestStatus (link:links) payload config = do
   resultE <- getStoriesOrDieTrying config payload ([link] <> links)
   stories <- case resultE of
     Left errors   -> do
-      logDebug $ "No story could be detected from " <> whPullReqHtmlUrl payload
+      logDebug $ "No story could be detected from " <> getUrl (whPullReqHtmlUrl payload)
       mapM_ (logDebug . T.pack . show) errors
       pure []
     Right stories -> pure $ ordNub stories
