@@ -15,6 +15,7 @@ import           Barrier.Events.Types         (WrappedHook (WrappedHookPullReque
                                                unWrapHookPullRequest)
 import           Barrier.GitHub               (addStoryLinkComment, getCommentsForPullRequest,
                                                setHasStoryStatus, setMissingStoryStatus)
+import           Barrier.ListUtils            (ordNub)
 import           Control.Error                (ExceptT, runExceptT)
 import           Control.Logger.Simple        (logDebug, logError)
 import           Control.Monad                (when)
@@ -31,7 +32,8 @@ import           Debug.Trace                  (trace)
 import           GitHub.Data.Issues           (issueCommentBody)
 import           GitHub.Data.Webhooks.Events  (PullRequestEvent, PullRequestEventAction (PullRequestActionOther, PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
                                                evPullReqAction, evPullReqPayload)
-import           GitHub.Data.Webhooks.Payload (HookPullRequest, whPullReqHead, whPullReqTargetRef)
+import           GitHub.Data.Webhooks.Payload (HookPullRequest, whPullReqHead, whPullReqHtmlUrl,
+                                               whPullReqTargetRef)
 import           Text.Regex.PCRE.Heavy        (re, scan)
 import           URI.ByteString               (Absolute, URIRef)
 
@@ -58,7 +60,11 @@ handlePullRequestEvent event =
 handlePullRequestAction :: PullRequestEvent -> Maybe (AppConfig -> IO ())
 handlePullRequestAction pr = do
   payload <- getPayLoadFromPr pr
+
+  -- try to get a link to a story by parsing the payload itself (the branch name is in the payload)
   let storyURI = getStoryLinkFromHook payload
+
+  -- try to get link(s) to the story from the PR description
   let links = maybeToList storyURI <> extractClubhouseLinks payload
   pure (setPullRequestStatus links (unWrapHookPullRequest payload))
 
@@ -79,8 +85,15 @@ setPullRequestStatus :: [ClubhouseLink]
                      -> AppConfig
                      -> IO ()
 setPullRequestStatus [] payload config = setMissingStoryStatus config payload
-setPullRequestStatus (link:links) payload config =
-  trace "checking and updating" (checkUpdatePullRequest config payload (unClubhouseLink link) (fmap unClubhouseLink links))
+setPullRequestStatus (link:links) payload config = do
+  resultE <- getStoriesOrDieTrying config payload ([link] <> links)
+  stories <- case resultE of
+    Left errors   -> do
+      logDebug $ "No story could be detected from " <> whPullReqHtmlUrl payload
+      mapM_ (logDebug . T.pack . show) errors
+      pure []
+    Right stories -> pure $ ordNub stories
+  checkerAndUpdater config payload stories
 
 
 -- | Handle the special case of a "synchronize" PullRequestEvent
@@ -169,9 +182,9 @@ sequenceEithers xs =
       Left _       -> Left (lefts xs)
 
 
-getLinksOrDieTrying ::
+getStoriesOrDieTrying ::
      AppConfig -> HookPullRequest -> [ClubhouseLink] -> IO (Either [StoryError] [Story])
-getLinksOrDieTrying config payload links = do
+getStoriesOrDieTrying config payload links = do
   sts <- mapM getStoryForLink links
   stories <- traverse runExceptT sts
   issueCommentsE <- getCommentsForPullRequest config payload

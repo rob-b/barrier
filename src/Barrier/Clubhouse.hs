@@ -84,7 +84,7 @@ data Story = Story
   , storyId   :: !Int
   , storyName :: !Text
   , storyUrl  :: !(URIRef Absolute)
-  } deriving (Show, Generic)
+  } deriving (Eq, Ord, Show, Generic)
 
 
 instance FromJSON Story where
