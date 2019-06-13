@@ -7,13 +7,12 @@ module Barrier.Events where
 import           Barrier.Config               (AppConfig)
 import           Barrier.Events.Comment       (handleCommentEvent, handleIssueCommentEventAction)
 import           Barrier.Events.PullRequest   (handlePullRequestAction, handlePullRequestEvent)
-import           Barrier.Events.Types         (WrappedEvent (WrappedIssueComment, WrappedPullRequest),
-                                               unWrapPullRequest)
+import           Barrier.Events.Types         (WrappedEvent (WrappedIssueComment, WrappedPullRequest))
 import           Data.Aeson                   (ToJSON, Value, decodeStrict, encode)
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
 import           Data.ByteString.Lazy         (toStrict)
-import           Data.Maybe                   (listToMaybe, mapMaybe)
+import           Data.Maybe                   (fromMaybe, listToMaybe, mapMaybe)
 import           Data.Monoid                  ((<>))
 import qualified GitHub.Data.PullRequests     as GitHub
 import           GitHub.Data.Webhooks         (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
@@ -74,9 +73,7 @@ readFixture name = B.readFile $ "fixtures/" <> name
 --------------------------------------------------------------------------------
 eventFromFixture :: IO PullRequestEvent
 eventFromFixture = do
-  f <- readFixture "zd_pull_request_event.json"
-  let (Just event) = selectEventType "pull_request" f
-  pure $ unWrapPullRequest event
+  fromMaybe (error "cannot decode zd_pull_request_event.json") . decodeStrict <$> readFixture "zd_pull_request_event.json"
 
 
 --------------------------------------------------------------------------------
@@ -87,6 +84,4 @@ payloadFromFixture = evPullReqPayload <$> eventFromFixture
 --------------------------------------------------------------------------------
 pullRequestPayloadFromFixture :: IO GitHub.PullRequest
 pullRequestPayloadFromFixture = do
-  f <- readFixture "pull_request_payload.json"
-  let (Just pr) = decodeStrict f
-  pure pr
+  fromMaybe (error "cannot decode pull_request_payload.json") . decodeStrict <$> readFixture "pull_request_payload.json"

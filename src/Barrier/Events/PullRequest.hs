@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE QuasiQuotes         #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -8,8 +7,8 @@
 module Barrier.Events.PullRequest where
 
 import           Barrier.Check                (extractClubhouseLinks, extractClubhouseLinks2)
-import           Barrier.Clubhouse            (ClubhouseLink, Story, StoryError (StoryHttpError),
-                                               getStory, mkClubhouseStoryUrl)
+import           Barrier.Clubhouse            (getStory, mkClubhouseStoryUrl)
+import           Barrier.Clubhouse.Types      (ClubhouseLink, Story, StoryError (StoryHttpError))
 import           Barrier.Config               (AppConfig, readish)
 import           Barrier.Events.Types         (WrappedHook (WrappedHookPullRequest),
                                                unWrapHookPullRequest)

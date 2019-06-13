@@ -8,7 +8,8 @@ module Barrier.Check
   , extractClubhouseLinks2
   ) where
 
-import           Barrier.Clubhouse            (ClubhouseLink, webappURIRefToApiUrl)
+import           Barrier.Clubhouse            (webappURIRefToApiUrl)
+import           Barrier.Clubhouse.Types      (ClubhouseLink)
 import           Barrier.Events.Types         (WrappedHook (WrappedHookIssueComment, WrappedHookPullRequest))
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B

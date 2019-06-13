@@ -6,7 +6,7 @@
 
 module Barrier.GitHub where
 
-import           Barrier.Clubhouse                (Story, storyUrl)
+import           Barrier.Clubhouse.Types          (Story, storyUrl)
 import           Barrier.Config                   (AppConfig, configGitHubToken)
 import           Control.Logger.Simple            (logDebug)
 import qualified Data.ByteString                  as B

@@ -1,11 +1,11 @@
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Barrier.Clubhouse where
 
+import           Barrier.Clubhouse.Types (ClubhouseLink (ClubhouseLink), Story, StoryError (StoryHttpError, StoryNotFoundError, StoryParseError))
 import           Barrier.Config          (AppConfig, configClubhouseToken, mkAppConfig, readish)
 import           Control.Error           (runExceptT, throwE)
 import           Control.Exception       (SomeException)
@@ -14,17 +14,14 @@ import           Control.Logger.Simple   (logDebug)
 import           Control.Monad           (void)
 import           Control.Monad.Except    (ExceptT (ExceptT), mapExceptT)
 import           Control.Monad.Reader    (MonadReader, ask, runReaderT)
-import           Data.Aeson              (FromJSON, eitherDecode, parseJSON, withObject, (.:))
+import           Data.Aeson              (eitherDecode)
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as B
 import qualified Data.ByteString.Char8   as C
-import qualified Data.ByteString.Char8   as C8
 import           Data.ByteString.Lazy    (toStrict)
 import           Data.Default.Class      (def)
 import           Data.Monoid             ((<>))
-import           Data.Text               (Text)
-import           Data.Text.Encoding      (decodeUtf8, encodeUtf8)
-import           GHC.Generics            (Generic)
+import           Data.Text.Encoding      (decodeUtf8)
 import           Lens.Micro.Platform     ((^.))
 import           Network.Connection      (TLSSettings (TLSSettingsSimple),
                                           settingDisableCertificateValidation,
@@ -84,27 +81,6 @@ check _ response preview =
        else Just (Client.StatusCodeException (void response) preview)
 
 
-data Story = Story
-  { storyType :: !Text
-  , storyId   :: !Int
-  , storyName :: !Text
-  , storyUrl  :: !(URIRef Absolute)
-  } deriving (Eq, Ord, Show, Generic)
-
-
-instance FromJSON Story where
-  parseJSON = withObject "story" $ \o -> do
-    url <- o .: "app_url"
-    case parseURI strictURIParserOptions (encodeUtf8 url) of
-      Left err -> fail (show err)
-      Right value -> do
-        storyType <- o .: "story_type"
-        storyId <- o .: "id"
-        storyName <- o .: "name"
-        let storyUrl = value
-        pure Story {..}
-
-
 --------------------------------------------------------------------------------
 test :: Int -> IO ()
 test id_ = do
@@ -122,14 +98,6 @@ test id_ = do
             Left StoryNotFoundError -> putStrLn "No matching story found."
             Left reason             -> putStrLn $ "This failed because: " <> show reason
             Right result            -> print result
-
-
-data StoryError
-  = StoryParseError String
-  | StoryNotFoundError
-  | StoryHttpError String
-  | StoryInvalidLinkError String
-  deriving (Show)
 
 
 --------------------------------------------------------------------------------
@@ -178,7 +146,7 @@ mapLeft _ (Right x) = Right x
 
 --------------------------------------------------------------------------------
 mkClubhouseStoryUrl :: Show a => a -> Either URIParseError ClubhouseLink
-mkClubhouseStoryUrl storyID = ClubhouseLink <$> parseURI strictURIParserOptions (B.intercalate "" ["https://api.clubhouse.io/api/v2/stories/", C8.pack $ show storyID])
+mkClubhouseStoryUrl storyID = ClubhouseLink <$> parseURI strictURIParserOptions (B.intercalate "" ["https://api.clubhouse.io/api/v2/stories/", C.pack $ show storyID])
 
 
 --------------------------------------------------------------------------------

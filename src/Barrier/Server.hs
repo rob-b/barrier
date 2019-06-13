@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -9,6 +10,7 @@ module Barrier.Server
    where
 
 
+import           Barrier.Clubhouse.Types              (decodeChEvent)
 import           Barrier.Config                       (AppConfig, configGitHubSecret, lookupEnv,
                                                        mkAppConfig)
 import           Barrier.Events                       (selectAction, selectEventType,
@@ -23,6 +25,7 @@ import           Control.Monad.IO.Class               (MonadIO, liftIO)
 import           Control.Monad.STM                    (atomically)
 import           Data.Aeson                           (ToJSON, Value, object, (.=))
 import           Data.ByteString                      (ByteString)
+import qualified Data.ByteString.Char8                as C
 import           Data.HVect                           (HVect ((:&:), HNil))
 import           Data.Text.Encoding                   (decodeUtf8)
 import qualified Data.Vector                          as V
@@ -100,13 +103,23 @@ app = do
   prehook initHook $ do
     prehook authHook $
       post root handleEvent
+    post "/ch" $ do
+      handleCh
   get "/a" $ do
       queue <- appStateQueue <$> getState
       _ <- liftIO $ Q.add queue (void xo)
       json ("{}" :: Value)
 
 
---------------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+handleCh :: ApiAction a
+handleCh = do
+  decodeChEvent <$> body >>= \case
+    Left err -> json (errorObject (422 :: Int) (C.pack err))
+    Right chEvent -> json chEvent
+
+
+---------------------------------------------------------------------------------
 handleEvent :: AuthedApiAction (HVect (SignedRequest ': xs)) a
 handleEvent = do
   bs <- body
