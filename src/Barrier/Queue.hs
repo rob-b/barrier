@@ -10,10 +10,12 @@ import           Control.Monad.STM               (atomically)
 type Action = IO ()
 
 
+--------------------------------------------------------------------------------
 make :: Int -> IO (TBMQueue Action)
 make = newTBMQueueIO
 
 
+--------------------------------------------------------------------------------
 add :: TBMQueue Action -> Action -> IO ()
 add q action = do
   addM <- atomically $ tryWriteTBMQueue q action
@@ -22,6 +24,7 @@ add q action = do
     Just added -> unless added $ putStrLn "Failed to add action"
 
 
+--------------------------------------------------------------------------------
 worker :: TBMQueue Action -> IO ()
 worker q = do
   let go = do

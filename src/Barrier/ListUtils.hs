@@ -2,6 +2,7 @@ module Barrier.ListUtils where
 
 import qualified Data.Set as Set
 
+--------------------------------------------------------------------------------
 ordNub :: (Ord a) => [a] -> [a]
 ordNub l = go Set.empty l
   where

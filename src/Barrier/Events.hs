@@ -13,7 +13,7 @@ import           Data.Aeson                   (ToJSON, Value, decodeStrict, enco
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
 import           Data.ByteString.Lazy         (toStrict)
-import           Data.Maybe                   (catMaybes, listToMaybe)
+import           Data.Maybe                   (listToMaybe, mapMaybe)
 import           Data.Monoid                  ((<>))
 import qualified GitHub.Data.PullRequests     as GitHub
 import           GitHub.Data.Webhooks         (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
@@ -22,17 +22,20 @@ import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, PullRequestEve
 import           GitHub.Data.Webhooks.Payload (HookPullRequest)
 
 
+--------------------------------------------------------------------------------
 supportedEvents :: [RepoWebhookEvent]
 supportedEvents = [WebhookIssueCommentEvent, WebhookPullRequestEvent]
 
 
+--------------------------------------------------------------------------------
 -- | Given the value of the X-Github-Event header and the request body, select the appropriate
 -- event type
 selectEventType :: ByteString -> ByteString -> Maybe WrappedEvent
 selectEventType eventHeader =
-  decodeEventType (listToMaybe $ catMaybes $ fmap (`matchEvent` eventHeader) supportedEvents)
+  decodeEventType (listToMaybe $ mapMaybe (`matchEvent` eventHeader) supportedEvents)
 
 
+--------------------------------------------------------------------------------
 -- | Given a RepoWebhookEvent and the bytestring value of X-Github-Event compare the bytestring
 -- with the json encoded version of the RepoWebhookEvent to see if they are the same
 matchEvent :: ToJSON a => a -> ByteString -> Maybe a
@@ -42,28 +45,33 @@ matchEvent event eventLabel
   where name' = "\"" <> eventLabel <> "\""
 
 
+--------------------------------------------------------------------------------
 -- | Given an event type, build the appropriate response
 selectResponse :: WrappedEvent -> Value
 selectResponse (WrappedIssueComment issue) = handleCommentEvent issue
 selectResponse (WrappedPullRequest pr)     = handlePullRequestEvent pr
 
 
+--------------------------------------------------------------------------------
 decodeEventType :: Maybe RepoWebhookEvent -> ByteString -> Maybe WrappedEvent
 decodeEventType (Just WebhookPullRequestEvent) bs = WrappedPullRequest <$> (decodeStrict bs :: Maybe PullRequestEvent)
 decodeEventType (Just WebhookIssueCommentEvent) bs = WrappedIssueComment <$> (decodeStrict bs :: Maybe IssueCommentEvent)
 decodeEventType _ _ = Nothing
 
 
+--------------------------------------------------------------------------------
 -- | Given an event from GH, select the appropriate response handler
 selectAction :: WrappedEvent -> Maybe (AppConfig -> IO ())
 selectAction (WrappedPullRequest pr)     = handlePullRequestAction pr
 selectAction (WrappedIssueComment issue) = handleIssueCommentEventAction issue
 
 
+--------------------------------------------------------------------------------
 readFixture :: FilePath -> IO ByteString
 readFixture name = B.readFile $ "fixtures/" <> name
 
 
+--------------------------------------------------------------------------------
 eventFromFixture :: IO PullRequestEvent
 eventFromFixture = do
   f <- readFixture "zd_pull_request_event.json"
@@ -71,10 +79,12 @@ eventFromFixture = do
   pure $ unWrapPullRequest event
 
 
+--------------------------------------------------------------------------------
 payloadFromFixture :: IO HookPullRequest
 payloadFromFixture = evPullReqPayload <$> eventFromFixture
 
 
+--------------------------------------------------------------------------------
 pullRequestPayloadFromFixture :: IO GitHub.PullRequest
 pullRequestPayloadFromFixture = do
   f <- readFixture "pull_request_payload.json"

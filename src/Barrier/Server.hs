@@ -40,10 +40,6 @@ import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase)
                                                        defaultSpockCfg, spc_errorHandler)
 
 
-logger :: Middleware
-logger = logStdoutDev
-
-
 data SignedRequest = SignedRequest
 
 data AppState = AppState
@@ -57,10 +53,17 @@ type ApiAction a = SpockActionCtx (HVect '[]) () () AppState a
 type AuthedApiAction ctx a = SpockActionCtx ctx () () AppState a
 
 
+--------------------------------------------------------------------------------
+logger :: Middleware
+logger = logStdoutDev
+
+
+--------------------------------------------------------------------------------
 initHook :: AuthedApiAction () (HVect '[])
 initHook = return HNil
 
 
+--------------------------------------------------------------------------------
 authHook :: AuthedApiAction (HVect xs) (HVect (SignedRequest ': xs))
 authHook = do
   oldCtx <- getContext
@@ -74,20 +77,24 @@ authHook = do
       json (errorObject (401 :: Int) "Invalid signature")
 
 
+--------------------------------------------------------------------------------
 errorObject :: ToJSON v => v -> ByteString -> Value
 errorObject code msg =
   let inner = V.singleton $ object ["status" .= code, "detail" .= decodeUtf8 msg]
   in object ["errors" .= inner]
 
 
+--------------------------------------------------------------------------------
 errorHandler :: MonadIO m => Status -> ActionCtxT ctx m b
 errorHandler (Status code msg) = json (errorObject code msg)
 
 
+--------------------------------------------------------------------------------
 barrierConfig :: SpockCfg conn sess st -> SpockCfg conn sess st
 barrierConfig cfg = cfg { spc_errorHandler = errorHandler }
 
 
+--------------------------------------------------------------------------------
 app :: Api
 app = do
   prehook initHook $ do
@@ -99,6 +106,7 @@ app = do
       json ("{}" :: Value)
 
 
+--------------------------------------------------------------------------------
 handleEvent :: AuthedApiAction (HVect (SignedRequest ': xs)) a
 handleEvent = do
   bs <- body
@@ -120,12 +128,14 @@ handleEvent = do
       json (selectResponse wrappedEvent)
 
 
+--------------------------------------------------------------------------------
 xo :: IO ()
 xo = do
   _ <- appendFile "example.txt" "this is my content\n"
   pure ()
 
 
+--------------------------------------------------------------------------------
 run :: IO ()
 run = withGlobalLogging (LogConfig Nothing True) (bracket setupApp shutdownApp runServer)
   where
@@ -140,12 +150,14 @@ run = withGlobalLogging (LogConfig Nothing True) (bracket setupApp shutdownApp r
           runApp port application
 
 
+--------------------------------------------------------------------------------
 shutdownApp :: (TBMQueue a, Async b) -> IO b
 shutdownApp (queue, worker) = do
   atomically $ closeTBMQueue queue
   wait worker
 
 
+--------------------------------------------------------------------------------
 setupApp :: IO (TBMQueue Q.Action, Async ())
 setupApp = do
   queue <- Q.make 100
@@ -153,6 +165,7 @@ setupApp = do
   pure (queue, workerRef)
 
 
+--------------------------------------------------------------------------------
 mkApp :: AppState -> IO (Warp.Port, Application)
 mkApp appState = do
   port <- maybe 9000  read <$> lookupEnv "PORT"
@@ -161,6 +174,7 @@ mkApp appState = do
   pure (port, logger app')
 
 
+--------------------------------------------------------------------------------
 runApp :: Warp.Port -> Application -> IO ()
 runApp port application = do
   let settings = Warp.setPort port Warp.defaultSettings

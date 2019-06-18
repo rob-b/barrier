@@ -32,6 +32,7 @@ import           System.Exit              (exitFailure)
 -- import           Init                     (initialize, shutdownApp)
 
 
+--------------------------------------------------------------------------------
 -- | Start or restart the server.
 -- newStore is from foreign-store.
 -- A Store holds onto some data across ghci reloads
@@ -77,6 +78,7 @@ update = do
                (putMVar done () >> shutdownApp (queue, _worker)))
 
 
+--------------------------------------------------------------------------------
 -- | kill the server
 shutdown :: IO ()
 shutdown = do
@@ -89,10 +91,12 @@ shutdown = do
           putStrLn "App is shutdown"
 
 
+--------------------------------------------------------------------------------
 tidStoreNum :: Word32
 tidStoreNum = 1
 
 
+--------------------------------------------------------------------------------
 modifyStoredIORef :: Store (IORef a) -> (a -> IO a) -> IO ()
 modifyStoredIORef store f = withStore store $ \ref -> do
     v <- readIORef ref

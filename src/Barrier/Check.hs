@@ -22,6 +22,7 @@ import           URI.ByteString               (Absolute, URIRef, authorityHostL,
                                                hostBSL, parseURI, strictURIParserOptions)
 
 
+--------------------------------------------------------------------------------
 getHookBody :: WrappedHook -> Text
 getHookBody hook
   | (WrappedHookIssueComment inner) <- hook = whIssueCommentBody inner
@@ -29,26 +30,31 @@ getHookBody hook
   | otherwise = ""
 
 
+--------------------------------------------------------------------------------
 extractClubhouseLinks :: WrappedHook -> [ClubhouseLink]
 extractClubhouseLinks hook = extractClubhouseLinks2 (getHookBody hook)
 
 
+--------------------------------------------------------------------------------
 extractClubhouseLinks2 :: Text -> [ClubhouseLink]
 extractClubhouseLinks2 hook = filterByDomain "app.clubhouse.io" $ extractUrls hook
 
 
+--------------------------------------------------------------------------------
 filterByDomain :: ByteString -> [URIRef Absolute] -> [ClubhouseLink]
 filterByDomain domain urls =
   let predicate u = u ^? authorityL . _Just . authorityHostL . hostBSL == Just domain
   in rights [webappURIRefToApiUrl x | x <- urls, predicate x]
 
 
+--------------------------------------------------------------------------------
 extractUrls :: Text -> [URIRef Absolute]
 extractUrls t =
   let tokens = tokenise " " (encodeUtf8 $ splitLines t)
   in rights $ parseURI strictURIParserOptions <$> tokens
 
 
+--------------------------------------------------------------------------------
 tokenise :: ByteString -> ByteString -> [ByteString]
 tokenise x y =
   h :
@@ -59,5 +65,6 @@ tokenise x y =
     (h, t) = B.breakSubstring x y
 
 
+--------------------------------------------------------------------------------
 splitLines :: Text -> Text
 splitLines txt = T.intercalate " " $ T.lines $ T.unlines $ T.splitOn "\r\n" txt

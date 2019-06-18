@@ -168,6 +168,7 @@ getCommentsForPullRequest conf pr = do
   GitHub.comments' auth' (params ^. commentOwner) (params ^. commentRepo) (params ^. commentIssue)
 
 
+--------------------------------------------------------------------------------
 randomWarning :: AppConfig -> HookPullRequest -> IO ()
 randomWarning conf pr = do
   let auth' = GitHub.OAuth $ configGitHubToken conf

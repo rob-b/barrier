@@ -37,6 +37,7 @@ import           Text.Regex.PCRE.Heavy        (re, scan)
 import           URI.ByteString               (Absolute, URIRef)
 
 
+--------------------------------------------------------------------------------
 -- | Given an PullRequestEvent, extract its inner payload
 getPayLoadFromPr :: PullRequestEvent -> Maybe WrappedHook
 getPayLoadFromPr pr@(evPullReqAction -> PullRequestOpenedAction) = Just $ WrappedHookPullRequest (evPullReqPayload pr)
@@ -46,6 +47,7 @@ getPayLoadFromPr pr@(syncCheck -> True) = Just $ WrappedHookPullRequest (evPullR
 getPayLoadFromPr _ = Nothing
 
 
+--------------------------------------------------------------------------------
 -- | Build the json body for the response to an incoming PullRequestEvent
 handlePullRequestEvent :: PullRequestEvent -> Value
 handlePullRequestEvent event =
@@ -55,6 +57,7 @@ handlePullRequestEvent event =
   in object ["data" .= inner]
 
 
+--------------------------------------------------------------------------------
 -- | Select the appropriate action to perform on an incoming PullRequestEvent
 handlePullRequestAction :: PullRequestEvent -> Maybe (AppConfig -> IO ())
 handlePullRequestAction pr = do
@@ -68,6 +71,7 @@ handlePullRequestAction pr = do
   pure (setPullRequestStatus links (unWrapHookPullRequest payload))
 
 
+--------------------------------------------------------------------------------
 getStoryLinkFromHook :: WrappedHook -> Maybe ClubhouseLink
 getStoryLinkFromHook hook = do
   let unwrappedPayload = unWrapHookPullRequest hook
@@ -79,6 +83,7 @@ getStoryLinkFromHook hook = do
     convert (Just x) _ = either (const Nothing) Just (mkClubhouseStoryUrl x)
 
 
+--------------------------------------------------------------------------------
 setPullRequestStatus :: [ClubhouseLink]
                      -> HookPullRequest
                      -> AppConfig
@@ -95,6 +100,7 @@ setPullRequestStatus (link:links) payload config = do
   checkerAndUpdater config payload stories
 
 
+--------------------------------------------------------------------------------
 -- | Handle the special case of a "synchronize" PullRequestEvent
 syncCheck :: PullRequestEvent -> Bool
 syncCheck event =
@@ -103,6 +109,7 @@ syncCheck event =
     _                                      -> False
 
 
+--------------------------------------------------------------------------------
 extractStoryId :: Text -> Maybe Int
 extractStoryId value = extract ((listToMaybe . scan regex) value) >>= readish
   where
@@ -111,6 +118,7 @@ extractStoryId value = extract ((listToMaybe . scan regex) value) >>= readish
     extract _                   = Nothing
 
 
+--------------------------------------------------------------------------------
 checkUpdatePullRequest
   :: AppConfig
   -> HookPullRequest
@@ -163,6 +171,7 @@ checkUpdatePullRequest config payload linkFromRefE linksFromPRDescE = do
     getStoryLink link  = linkDebug link >> runReaderT (getStory (ClubhouseLink link)) config
 
 
+--------------------------------------------------------------------------------
 checkerAndUpdater :: AppConfig
                   -> HookPullRequest
                   -> [Story]
@@ -174,6 +183,7 @@ checkerAndUpdater config payload stories = do
     setStatus []        = setMissingStoryStatus config payload
 
 
+--------------------------------------------------------------------------------
 sequenceEithers :: [Either a b] -> Either [a] [b]
 sequenceEithers xs =
     case sequence xs of
@@ -181,6 +191,7 @@ sequenceEithers xs =
       Left _       -> Left (lefts xs)
 
 
+--------------------------------------------------------------------------------
 getStoriesOrDieTrying ::
      AppConfig -> HookPullRequest -> [ClubhouseLink] -> IO (Either [StoryError] [Story])
 getStoriesOrDieTrying config payload links = do

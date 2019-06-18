@@ -23,6 +23,7 @@ data Environment
   deriving (Show)
 
 
+--------------------------------------------------------------------------------
 lookupEnv
   :: IsString b
   => String -> IO (Maybe b)
@@ -31,6 +32,7 @@ lookupEnv envVar = do
   pure $ fromString <$> envMaybe
 
 
+--------------------------------------------------------------------------------
 mkEnvironment
   :: (IsString a, Eq a)
   => a -> Maybe Environment
@@ -40,6 +42,7 @@ mkEnvironment s
   | otherwise = Nothing
 
 
+--------------------------------------------------------------------------------
 mkAppConfig :: IO (Maybe AppConfig)
 mkAppConfig = do
   chTokenM <- lookupEnv "CLUBHOUSE_API_TOKEN"
@@ -50,5 +53,6 @@ mkAppConfig = do
   pure $ AppConfig <$> ghTokenM <*> chTokenM <*> ghSecretM <*> environment
 
 
+--------------------------------------------------------------------------------
 readish :: Integral a => Text -> Maybe a
 readish s = either (const Nothing) (Just . fst) (decimal s)

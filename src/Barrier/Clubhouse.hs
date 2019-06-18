@@ -46,6 +46,7 @@ newtype ClubhouseLink = ClubhouseLink
   } deriving (Show)
 
 
+--------------------------------------------------------------------------------
 noVerifyTlsManagerSettings :: Client.ManagerSettings
 noVerifyTlsManagerSettings =
   mkManagerSettings
@@ -57,20 +58,24 @@ noVerifyTlsManagerSettings =
     Nothing
 
 
+--------------------------------------------------------------------------------
 noTlsManager :: IO Client.Manager
 noTlsManager = Client.newManager noVerifyTlsManagerSettings
 
 
+--------------------------------------------------------------------------------
 noTlsHttpConfig :: IO HttpConfig
 noTlsHttpConfig = do
   manager <- noTlsManager
   pure $ httpConfig { httpConfigAltManager = Just manager}
 
 
+--------------------------------------------------------------------------------
 httpConfig :: HttpConfig
 httpConfig = def {httpConfigCheckResponse = check}
 
 
+--------------------------------------------------------------------------------
 check :: p -> Client.Response a -> ByteString -> Maybe Client.HttpExceptionContent
 check _ response preview =
   let scode = statusCode $ Client.responseStatus response
@@ -100,6 +105,7 @@ instance FromJSON Story where
         pure Story {..}
 
 
+--------------------------------------------------------------------------------
 test :: Int -> IO ()
 test id_ = do
   let urlE = mkClubhouseStoryUrl id_
@@ -126,6 +132,7 @@ data StoryError
   deriving (Show)
 
 
+--------------------------------------------------------------------------------
 getStory :: MonadReader AppConfig m => ClubhouseLink -> m (ExceptT StoryError IO Story)
 getStory (ClubhouseLink url) = do
   config <- ask
@@ -150,10 +157,12 @@ getStory (ClubhouseLink url) = do
                  pure (mapLeft StoryParseError (eitherDecode $ responseBody response'))
 
 
+--------------------------------------------------------------------------------
 handleExceptT' :: (Exception e, Functor m, MonadCatch m) => (e -> Maybe x) -> m a -> ExceptT x m a
 handleExceptT' handler = ExceptT . tryJust handler
 
 
+--------------------------------------------------------------------------------
 handle :: SomeException -> Maybe StoryError
 handle e =
   case fromException e of
@@ -161,19 +170,23 @@ handle e =
     _                             -> Nothing
 
 
+--------------------------------------------------------------------------------
 mapLeft :: (a -> b) -> Either a c -> Either b c
 mapLeft f (Left x)  = Left $ f x
 mapLeft _ (Right x) = Right x
 
 
+--------------------------------------------------------------------------------
 mkClubhouseStoryUrl :: Show a => a -> Either URIParseError ClubhouseLink
 mkClubhouseStoryUrl storyID = ClubhouseLink <$> parseURI strictURIParserOptions (B.intercalate "" ["https://api.clubhouse.io/api/v2/stories/", C8.pack $ show storyID])
 
 
+--------------------------------------------------------------------------------
 sampleUrl :: ByteString
 sampleUrl = "https://app.clubhouse.io/zerodeposit/story/2944/create-contact-form-using-netlify"
 
 
+--------------------------------------------------------------------------------
 webappUrlToApiUrl :: ByteString -> Either URIParseError ClubhouseLink
 webappUrlToApiUrl url =
   case parseURI strictURIParserOptions url of
@@ -181,6 +194,7 @@ webappUrlToApiUrl url =
     Right url'  -> webappURIRefToApiUrl url'
 
 
+--------------------------------------------------------------------------------
 webappURIRefToApiUrl :: URIRef Absolute -> Either URIParseError ClubhouseLink
 webappURIRefToApiUrl url = response . getId $ C.split '/' (url ^. pathL)
   where
