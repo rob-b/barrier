@@ -64,11 +64,19 @@ handlePullRequestAction pr = do
   payload <- getPayLoadFromPr pr
 
   -- try to get a link to a story by parsing the payload itself (the branch name is in the payload)
-  let storyURI = getStoryLinkFromHook payload
+  let storyFromRef = maybeToList $ getStoryLinkFromHook payload
 
   -- try to get link(s) to the story from the PR description
-  let links = maybeToList storyURI <> extractClubhouseLinks payload
-  pure (setPullRequestStatus links (unWrapHookPullRequest payload))
+  let links = extractClubhouseLinks payload
+
+  -- we potentially have a story link from the PR ref
+  pure $ setPullRequestStatus (storyFromRef <> links) (unWrapHookPullRequest payload)
+
+
+xo :: Maybe ClubhouseLink -> [ClubhouseLink] -> AppConfig -> IO ()
+xo Nothing [] _config  = putStrLn "Check the comments, set the status, maybe add a comment"
+xo Nothing xs _config  = putStrLn "Check the comments, "
+xo (Just x) xs _config = undefined
 
 
 --------------------------------------------------------------------------------
@@ -84,13 +92,10 @@ getStoryLinkFromHook hook = do
 
 
 --------------------------------------------------------------------------------
-setPullRequestStatus :: [ClubhouseLink]
-                     -> HookPullRequest
-                     -> AppConfig
-                     -> IO ()
+setPullRequestStatus :: [ClubhouseLink] -> HookPullRequest -> AppConfig -> IO ()
 setPullRequestStatus [] payload config = setMissingStoryStatus config payload
-setPullRequestStatus (link:links) payload config = do
-  resultE <- getStoriesOrDieTrying config payload ([link] <> links)
+setPullRequestStatus links payload config = do
+  resultE <- getStoriesOrDieTrying config payload links
   stories <- case resultE of
     Left errors   -> do
       logDebug $ "No story could be detected from " <> getUrl (whPullReqHtmlUrl payload)
@@ -165,9 +170,6 @@ checkUpdatePullRequest config payload linkFromRefE linksFromPRDescE = do
       _ <- checkerAndUpdater config payload stories
       pure ()
   where
-    linkDebug link = logDebug ("Checking link: " <> T.pack (show link))
-
-    -- getStoryLink (Left reason) = pure $ throwE $ StoryInvalidLinkError (show reason)
     getStoryLink link  = linkDebug link >> runReaderT (getStory (ClubhouseLink link)) config
 
 
@@ -195,21 +197,27 @@ sequenceEithers xs =
 getStoriesOrDieTrying ::
      AppConfig -> HookPullRequest -> [ClubhouseLink] -> IO (Either [StoryError] [Story])
 getStoriesOrDieTrying config payload links = do
-  sts <- mapM getStoryForLink links
+  -- stories gathered from the PR refname and the PR description
+  sts <- mapM (getStoryForLink config) links
   stories <- traverse runExceptT sts
+
+  -- comments on the PR
   issueCommentsE <- getCommentsForPullRequest config payload
   case issueCommentsE of
     Left err -> do
+      when (null stories) $ addStoryLinkComment config payload _
       logDebug $ T.pack (show err)
       pure $ sequenceEithers stories
     Right comments -> do
       let bodies = concatMap extractClubhouseLinks2 (fmap issueCommentBody comments)
-      bodiesE <- mapM getStoryForLink bodies
+      bodiesE <- mapM (getStoryForLink config) bodies
       (errors', bodies') <- partitionEithers <$> traverse runExceptT bodiesE
       logDebug . T.pack $ show errors'
       pure . sequenceEithers $ stories <> fmap Right bodies'
-  where
-    linkDebug :: (Show a, MonadIO m) => a -> m ()
-    linkDebug link = logDebug ("Checking link: " <> T.pack (show link))
-    getStoryForLink :: (MonadIO m) => ClubhouseLink -> m (ExceptT StoryError IO Story)
-    getStoryForLink l = linkDebug l >> runReaderT (getStory l) config
+
+
+linkDebug :: (Show a, MonadIO m) => a -> m ()
+linkDebug link = logDebug ("Checking link: " <> T.pack (show link))
+
+getStoryForLink :: (MonadIO m) => AppConfig -> ClubhouseLink -> m (ExceptT StoryError IO Story)
+getStoryForLink config l = linkDebug l >> runReaderT (getStory l) config
