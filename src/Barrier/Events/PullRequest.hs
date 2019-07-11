@@ -60,22 +60,13 @@ handlePullRequestEvent event =
 handlePullRequestAction :: PullRequestEvent -> Maybe (AppConfig -> IO ())
 handlePullRequestAction pr = do
   payload <- getPayLoadFromPr pr
-
-  -- try to get a link to a story by parsing the payload itself (the branch name is in the payload)
-  let storyFromRef = maybeToList $ getStoryLinkFromHook payload
-
-  -- try to get link(s) to the story from the PR description
-  let links = extractClubhouseLinks payload
-
-  -- we potentially have a story link from the PR ref
-  pure $ setPullRequestStatus (storyFromRef <> links) (unWrapHookPullRequest payload)
+  pure $ setPullRequestStatus payload
 
 
 --------------------------------------------------------------------------------
-getStoryLinkFromHook :: WrappedHook -> Maybe ClubhouseLink
-getStoryLinkFromHook hook = do
-  let unwrappedPayload = unWrapHookPullRequest hook
-  let targetRef = whPullReqTargetRef . whPullReqHead $ unwrappedPayload
+getStoryLinkFromPayload :: HookPullRequest -> Maybe ClubhouseLink
+getStoryLinkFromPayload payload = do
+  let targetRef = whPullReqTargetRef . whPullReqHead $ payload
   convert (extractStoryId targetRef) (T.unpack targetRef)
   where
     convert :: Show a => Maybe a -> String -> Maybe ClubhouseLink
@@ -84,10 +75,10 @@ getStoryLinkFromHook hook = do
 
 
 --------------------------------------------------------------------------------
-setPullRequestStatus :: [ClubhouseLink] -> HookPullRequest -> AppConfig -> IO ()
-setPullRequestStatus [] payload config = setMissingStoryStatus config payload
-setPullRequestStatus links payload config = do
-  resultE <- getStoriesOrDieTrying config payload links
+setPullRequestStatus :: WrappedHook -> AppConfig -> IO ()
+setPullRequestStatus hook config = do
+  let payload  = unWrapHookPullRequest hook
+  resultE <- getStoriesOrDieTrying config hook
   stories <- case resultE of
     Left errors   -> do
       logDebug $ "No story could be detected from " <> getUrl (whPullReqHtmlUrl payload)
@@ -125,15 +116,15 @@ checkerAndUpdater config payload stories = do
   where
     commentsOnly fs =
       case foundSource fs of
-        CommentSource -> True
-        _             -> False
+        CommentSource     -> True
+        DescriptionSource -> True
+        RefSource         -> False
 
     setStatus [] = setMissingStoryStatus config payload
     setStatus stories'@(story:_) = do
       let story' = foundStory story
       setHasStoryStatus config payload story'
       unless (any commentsOnly stories') (addStoryLinkComment config payload story')
-      pure ()
 
 
 --------------------------------------------------------------------------------
@@ -156,20 +147,39 @@ data FoundStory = FoundStory
   , foundStory  :: Story
   }
 
+
 --------------------------------------------------------------------------------
 getStoriesOrDieTrying ::
-     AppConfig -> HookPullRequest -> [ClubhouseLink] -> IO (Either [StoryError] [FoundStory])
-getStoriesOrDieTrying config payload links = do
-  -- stories gathered from the PR refname and the PR description
-  sts <- mapM (getStoryForLink config) links
-  stories <- traverse runExceptT sts
+     AppConfig -> WrappedHook -> IO (Either [StoryError] [FoundStory])
+getStoriesOrDieTrying config hook = do
+  let payload = unWrapHookPullRequest hook
 
+  -- try to get a link to a story by parsing the payload itself (the branch name is in the
+  -- payload)
+  let storyFromRef = maybeToList $ getStoryLinkFromPayload payload
+
+  -- try to get link(s) to the story from the PR description
+  let links = extractClubhouseLinks hook
+
+  -- stories gathered from the PR refname
+  s <- mapM (getStoryForLink config) storyFromRef
+  refStory <- traverse runExceptT s
+
+  -- stories gathered from the PR description
+  ss <- mapM (getStoryForLink config) links
+  descStories <- traverse runExceptT ss
+
+  -- stories gathered from the PR comments
   issueCommentsE <- getCommentsForPullRequest config payload
-  issueComments <- case issueCommentsE of
-    Left err    -> pure [Left (StoryHttpError (show err))]
-    Right comms -> storiesFromComments comms
+  issueComments <-
+    case issueCommentsE of
+      Left err    -> pure [Left (StoryHttpError (show err))]
+      Right comms -> storiesFromComments comms
 
-  pure $ sequenceEithers (fmap convertToDescription stories <> fmap convertToComment issueComments)
+  pure $
+    sequenceEithers
+      (fmap convertToRef refStory <> fmap convertToDescription descStories <>
+       fmap convertToComment issueComments)
 
   where
     storiesFromComments :: V.Vector IssueComment -> IO [Either StoryError Story]
@@ -181,6 +191,7 @@ getStoriesOrDieTrying config payload links = do
 
     convertToDescription = fmap (FoundStory DescriptionSource)
     convertToComment = fmap (FoundStory CommentSource)
+    convertToRef = fmap (FoundStory RefSource)
 
 
 linkDebug :: (Show a, MonadIO m) => a -> m ()
