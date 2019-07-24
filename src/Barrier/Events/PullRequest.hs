@@ -15,6 +15,7 @@ import           Barrier.Events.Types         (WrappedHook (WrappedHookPullReque
                                                unWrapHookPullRequest)
 import           Barrier.GitHub               (addStoryLinkComment, getCommentsForPullRequest,
                                                setHasStoryStatus, setMissingStoryStatus)
+import           Barrier.ListUtils            (ordNub)
 import           Control.Error                (ExceptT, runExceptT)
 import           Control.Logger.Simple        (logDebug)
 import           Control.Monad                (unless)
@@ -84,7 +85,7 @@ setPullRequestStatus hook config = do
       logDebug $ "No story could be detected from " <> getUrl (whPullReqHtmlUrl payload)
       mapM_ (logDebug . T.pack . show) errors
       pure []
-    Right stories -> pure stories
+    Right stories -> pure $ ordNub stories
   checkerAndUpdater config payload stories
 
 
@@ -139,13 +140,13 @@ data StorySource
   = RefSource
   | DescriptionSource
   | CommentSource
-  deriving (Show)
+  deriving (Show, Eq, Ord)
 
 
 data FoundStory = FoundStory
   { foundSource :: StorySource
   , foundStory  :: Story
-  }
+  } deriving (Show, Ord, Eq)
 
 
 --------------------------------------------------------------------------------
@@ -156,10 +157,10 @@ getStoriesOrDieTrying config hook = do
 
   -- try to get a link to a story by parsing the payload itself (the branch name is in the
   -- payload)
-  let storyFromRef = maybeToList $ getStoryLinkFromPayload payload
+  let storyFromRef :: [ClubhouseLink] = maybeToList $ getStoryLinkFromPayload payload
 
-  -- try to get link(s) to the story from the PR description
-  let links = extractClubhouseLinks hook
+  -- try to get link(s) to the story from the PR description (ignoring any links we already found)
+  let links :: [ClubhouseLink] = filter (`elem` storyFromRef) (extractClubhouseLinks hook)
 
   -- stories gathered from the PR refname
   s <- mapM (getStoryForLink config) storyFromRef

@@ -43,7 +43,7 @@ import           URI.ByteString          (Absolute, URIParseError (OtherError), 
 
 newtype ClubhouseLink = ClubhouseLink
   { unClubhouseLink :: URIRef Absolute
-  } deriving (Show)
+  } deriving (Eq, Show)
 
 
 --------------------------------------------------------------------------------
