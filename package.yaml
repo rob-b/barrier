@@ -60,6 +60,7 @@ library:
   - warp
   - containers
   - aeson-casing
+  - aeson-better-errors
 
 executables:
   barrier:

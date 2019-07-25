@@ -7,18 +7,23 @@
 
 module Barrier.Clubhouse.Types where
 
-import           Data.Aeson            (FromJSON, ToJSON, eitherDecodeStrict, genericToJSON,
-                                        parseJSON, toJSON, withObject, withText, (.:), (.:?))
-import           Data.Aeson.Casing     (aesonDrop, snakeCase)
-import           Data.ByteString       (ByteString)
-import qualified Data.ByteString.Char8 as C
-import           Data.IntMap           (IntMap)
-import qualified Data.IntMap           as IntMap
-import           Data.Text             (Text)
-import           GHC.Generics          (Generic)
+import           Data.Aeson              (Array, FromJSON, ToJSON, Value, eitherDecodeStrict,
+                                          genericToJSON, parseJSON, toJSON, withArray, withObject,
+                                          withText, (.:), (.:?))
+import           Data.Aeson.Casing       (aesonDrop, snakeCase)
+import           Data.ByteString         (ByteString)
+import qualified Data.ByteString.Char8   as C
+import           Data.IntMap             (IntMap)
+import qualified Data.IntMap             as IntMap
+import           Data.Monoid             ((<>))
+import           Data.Text               (Text)
+import qualified Data.Text               as T
+import           GHC.Generics            (Generic)
 
-import           Data.Text.Encoding    (encodeUtf8)
-import           URI.ByteString        (Absolute, URIRef, parseURI, strictURIParserOptions)
+import           Data.Aeson.BetterErrors (Parse, asIntegral, asText, key, toAesonParser)
+import qualified Data.Aeson.BetterErrors as BetterErrors
+import           Data.Text.Encoding      (encodeUtf8)
+import           URI.ByteString          (Absolute, URIRef, parseURI, strictURIParserOptions)
 
 
 newtype ClubhouseLink = ClubhouseLink
@@ -34,17 +39,28 @@ data Story = Story
   } deriving (Eq, Ord, Show, Generic)
 
 
+data CustomParseError =
+  UrlParseError String
+  deriving (Show)
+
+
+parseURL :: Text -> Either CustomParseError (URIRef Absolute)
+parseURL url =
+  case parseURI strictURIParserOptions (encodeUtf8 url) of
+    Left err    -> Left $ UrlParseError (show err)
+    Right value -> Right value
+
+
+displayCustomParseError :: CustomParseError -> Text
+displayCustomParseError (UrlParseError reason) = "Cannot parse url: " <> T.pack reason
+
+
+asStory :: Parse CustomParseError Story
+asStory = Story <$> key "story_type" asText <*> key "id" asIntegral <*> key "name" asText <*> key "app_url" (BetterErrors.withText parseURL)
+
+
 instance FromJSON Story where
-  parseJSON = withObject "story" $ \o -> do
-    url <- o .: "app_url"
-    case parseURI strictURIParserOptions (encodeUtf8 url) of
-      Left err -> fail (show err)
-      Right value -> do
-        storyType <- o .: "story_type"
-        storyId <- o .: "id"
-        storyName <- o .: "name"
-        let storyUrl = value
-        pure Story {..}
+  parseJSON = toAesonParser displayCustomParseError asStory
 
 
 data StoryError
@@ -145,8 +161,14 @@ data ClubhouseWorkflowState = ClubhouseWorkflowState
 
 
 instance FromJSON ClubhouseWorkflowState where
-  parseJSON = withObject "thingy" $ \o -> do
-    error (show o)
+  parseJSON = withObject "references" $ \o -> do
+    refs :: Value <- o .: "references"
+    -- let res :: = fmap _ refs
+    error (show refs)
+    where
+      other o1 = do
+        id_ <- o1 .: "id"
+        pure id_
 
 instance ToJSON ClubhouseWorkflowState where
   toJSON = genericToJSON $ aesonDrop 2 snakeCase
