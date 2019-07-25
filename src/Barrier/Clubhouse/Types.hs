@@ -26,11 +26,13 @@ import           Data.Text.Encoding      (encodeUtf8)
 import           URI.ByteString          (Absolute, URIRef, parseURI, strictURIParserOptions)
 
 
+--------------------------------------------------------------------------------
 newtype ClubhouseLink = ClubhouseLink
   { unClubhouseLink :: URIRef Absolute
   } deriving (Show)
 
 
+--------------------------------------------------------------------------------
 data Story = Story
   { storyType :: !Text
   , storyId   :: !Int
@@ -39,11 +41,13 @@ data Story = Story
   } deriving (Eq, Ord, Show, Generic)
 
 
+--------------------------------------------------------------------------------
 data CustomParseError =
   UrlParseError String
   deriving (Show)
 
 
+--------------------------------------------------------------------------------
 parseURL :: Text -> Either CustomParseError (URIRef Absolute)
 parseURL url =
   case parseURI strictURIParserOptions (encodeUtf8 url) of
@@ -51,18 +55,22 @@ parseURL url =
     Right value -> Right value
 
 
+--------------------------------------------------------------------------------
 displayCustomParseError :: CustomParseError -> Text
 displayCustomParseError (UrlParseError reason) = "Cannot parse url: " <> T.pack reason
 
 
+--------------------------------------------------------------------------------
 asStory :: Parse CustomParseError Story
 asStory = Story <$> key "story_type" asText <*> key "id" asIntegral <*> key "name" asText <*> key "app_url" (BetterErrors.withText parseURL)
 
 
+--------------------------------------------------------------------------------
 instance FromJSON Story where
   parseJSON = toAesonParser displayCustomParseError asStory
 
 
+--------------------------------------------------------------------------------
 data StoryError
   = StoryParseError String
   | StoryNotFoundError
@@ -71,6 +79,7 @@ data StoryError
   deriving (Show)
 
 
+--------------------------------------------------------------------------------
 data ClubhouseReference = ClubhouseReference
   { chReferenceId         :: Int
   , chReferenceEntityType :: ClubhouseReferenceEntityType
@@ -79,15 +88,18 @@ data ClubhouseReference = ClubhouseReference
   } deriving (Show, Generic)
 
 
+--------------------------------------------------------------------------------
 newtype ClubhouseReferences = ClubhouseReferences
   { chReferences :: [ClubhouseReference]
   } deriving (Show, Generic)
 
 
+--------------------------------------------------------------------------------
 instance FromJSON ClubhouseReferences where
   parseJSON = withObject "references" $ \o -> do ClubhouseReferences <$> o .: "references"
 
 
+--------------------------------------------------------------------------------
 instance FromJSON ClubhouseReference where
   parseJSON = withObject "reference" $ \o -> do
     chReferenceId <- o .: "id"
@@ -97,12 +109,14 @@ instance FromJSON ClubhouseReference where
     pure ClubhouseReference { .. }
 
 
+--------------------------------------------------------------------------------
 data ClubhouseReferenceEntityType
   = ClubhouseWorkflowEntity
   | UnsupportedEntity
   deriving (Show, Generic)
 
 
+--------------------------------------------------------------------------------
 instance FromJSON ClubhouseReferenceEntityType where
   parseJSON =
     withText "entity_type" $ \case
@@ -110,19 +124,28 @@ instance FromJSON ClubhouseReferenceEntityType where
       _ -> pure UnsupportedEntity
 
 
+--------------------------------------------------------------------------------
 newtype ClubhouseEvent = ClubhouseEvent
   { chActions :: [ClubhouseAction]
   } deriving (Show, Generic)
 
 
+--------------------------------------------------------------------------------
 instance FromJSON ClubhouseEvent where
-  parseJSON = withObject "event" $ \o -> do ClubhouseEvent <$> o .: "actions"
+  parseJSON = BetterErrors.toAesonParser' asClubhouseEvent
 
 
+--------------------------------------------------------------------------------
+asClubhouseEvent :: Parse e ClubhouseEvent
+asClubhouseEvent = ClubhouseEvent <$> key "actions" (BetterErrors.eachInArray asClubhouseAction)
+
+
+--------------------------------------------------------------------------------
 instance ToJSON ClubhouseEvent where
   toJSON = genericToJSON $ aesonDrop 2 snakeCase
 
 
+--------------------------------------------------------------------------------
 data ClubhouseAction = ClubhouseAction
   { chActionId            :: Int
   , chActionAction        :: Text
@@ -132,71 +155,68 @@ data ClubhouseAction = ClubhouseAction
   } deriving (Show, Generic)
 
 
+--------------------------------------------------------------------------------
+asClubhouseAction :: Parse e ClubhouseAction
+asClubhouseAction = ClubhouseAction <$> key "id" asIntegral <*> key "action" asText <*> key "entity_type" asText <*> key "name" asText <*> key "changes" asClubhouseWorkflowState
+
+
+--------------------------------------------------------------------------------
 instance FromJSON ClubhouseAction where
-  parseJSON = withObject "story" $ \o -> do
-    chActionId <- o .: "id"
-    chActionAction <- o .: "action"
-    chActionEntityType <- o .: "entity_type"
-    chActionName <- o .: "name"
-    chActionWorkflowState <- parseWorkflow o
-    pure ClubhouseAction { .. }
-
-    where
-      parseWorkflow o = do
-        changes <- o .: "changes"
-        stateObject <- changes .: "workflow_state_id"
-        chOldState <- stateObject .: "old"
-        chNewState <- stateObject .: "new"
-        pure ClubhouseWorkflowState { .. }
+  parseJSON = BetterErrors.toAesonParser' asClubhouseAction
 
 
+--------------------------------------------------------------------------------
 instance ToJSON ClubhouseAction where
   toJSON = genericToJSON $ aesonDrop 8 snakeCase
 
 
+--------------------------------------------------------------------------------
 data ClubhouseWorkflowState = ClubhouseWorkflowState
   { chOldState :: Int
   , chNewState :: Int
   } deriving (Show, Generic)
 
 
+--------------------------------------------------------------------------------
 instance FromJSON ClubhouseWorkflowState where
-  parseJSON = withObject "references" $ \o -> do
-    refs :: Value <- o .: "references"
-    -- let res :: = fmap _ refs
-    error (show refs)
-    where
-      other o1 = do
-        id_ <- o1 .: "id"
-        pure id_
+  parseJSON = BetterErrors.toAesonParser' asClubhouseWorkflowState
 
+
+--------------------------------------------------------------------------------
 instance ToJSON ClubhouseWorkflowState where
   toJSON = genericToJSON $ aesonDrop 2 snakeCase
 
 
+--------------------------------------------------------------------------------
+asClubhouseWorkflowState :: Parse e ClubhouseWorkflowState
+asClubhouseWorkflowState = ClubhouseWorkflowState <$> key "workflow_state_id" (key "old" asIntegral) <*> key "workflow_state_id" (key "new" asIntegral)
+
+
+--------------------------------------------------------------------------------
 readEvent :: IO (Either String ClubhouseEvent)
 readEvent = do
   let jsonData = C.readFile "clubhouse-event.json"
-  events <- decodeChEvent <$> jsonData
-  -- refs <- decodeChReferences <$> jsonData
-  pure events
+  decodeChEvent <$> jsonData
 
 
-readReferences :: IO (Either String [IntMap Text])
+--------------------------------------------------------------------------------
+readReferences :: IO (Either String (IntMap Text))
 readReferences = do
-  let jsonData = C.readFile "clubhouse-event.json"
-  decodeChReferences <$> jsonData
+  decodeChReferences <$> C.readFile "clubhouse-event.json"
 
 
+--------------------------------------------------------------------------------
 decodeChEvent :: ByteString -> Either String ClubhouseEvent
 decodeChEvent = eitherDecodeStrict
 
 
-decodeChReferences :: ByteString -> Either String [IntMap Text]
+--------------------------------------------------------------------------------
+decodeChReferences :: ByteString -> Either String (IntMap Text)
 decodeChReferences bs = do
   refs <- eitherDecodeStrict bs
-  pure $ mapper <$> filter predicate (chReferences refs)
+  pure . foldRefs $ mapper <$> filter predicate (chReferences refs)
   where
+    foldRefs refs = foldl IntMap.union IntMap.empty refs
     predicate ref = case chReferenceEntityType ref of
          ClubhouseWorkflowEntity -> True
          _                       -> False
@@ -204,5 +224,6 @@ decodeChReferences bs = do
     mapper ref = IntMap.fromList [(chReferenceId ref, chReferenceName ref)]
 
 
+--------------------------------------------------------------------------------
 decodeChWorkflowState :: ByteString -> Either String ClubhouseWorkflowState
 decodeChWorkflowState = eitherDecodeStrict

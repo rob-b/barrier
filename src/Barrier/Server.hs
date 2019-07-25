@@ -10,7 +10,9 @@ module Barrier.Server
    where
 
 
-import           Barrier.Clubhouse.Types              (decodeChEvent)
+import           Barrier.Clubhouse.Types              (chActionWorkflowState, chActions,
+                                                       chNewState, decodeChEvent,
+                                                       decodeChReferences)
 import           Barrier.Config                       (AppConfig, configGitHubSecret, lookupEnv,
                                                        mkAppConfig)
 import           Barrier.Events                       (selectAction, selectEventType,
@@ -19,14 +21,17 @@ import qualified Barrier.Queue                        as Q
 import           Control.Concurrent.Async             (Async, async, wait)
 import           Control.Concurrent.STM.TBMQueue      (TBMQueue, closeTBMQueue)
 import           Control.Exception.Safe               (bracket)
-import           Control.Logger.Simple                (LogConfig (LogConfig), withGlobalLogging)
-import           Control.Monad                        (void)
+import           Control.Logger.Simple                (LogConfig (LogConfig), logDebug, logError,
+                                                       withGlobalLogging)
+import           Control.Monad                        (forM_, void)
 import           Control.Monad.IO.Class               (MonadIO, liftIO)
 import           Control.Monad.STM                    (atomically)
 import           Data.Aeson                           (ToJSON, Value, object, (.=))
 import           Data.ByteString                      (ByteString)
 import qualified Data.ByteString.Char8                as C
 import           Data.HVect                           (HVect ((:&:), HNil))
+import qualified Data.IntMap                          as IntMap
+import qualified Data.Text                            as T
 import           Data.Text.Encoding                   (decodeUtf8)
 import qualified Data.Vector                          as V
 import           Debug.Trace                          (trace)
@@ -112,11 +117,32 @@ app = do
 
 
 ---------------------------------------------------------------------------------
+logDebugString :: MonadIO m => String -> m ()
+logDebugString s = logDebug $ T.pack s
+
+
+---------------------------------------------------------------------------------
+logDebugShow :: (Show a, MonadIO m) => a -> m ()
+logDebugShow s = logDebugString $ show s
+
+
+---------------------------------------------------------------------------------
 handleCh :: ApiAction a
 handleCh = do
   decodeChEvent <$> body >>= \case
     Left err -> json (errorObject (422 :: Int) (C.pack err))
-    Right chEvent -> json chEvent
+    Right chEvent -> do
+      decodeChReferences <$> body >>= \case
+        Left err -> logError $ T.pack ("Unable to parse references " ++ show err)
+        Right references -> do
+          logDebugShow references
+          forM_ (chActions chEvent) $ \action -> do
+            logDebugString (show action)
+            let newState = chNewState (chActionWorkflowState action)
+            let matched = IntMap.filterWithKey (\key _ -> key == newState) references
+            logDebugShow matched
+            json matched
+      json chEvent
 
 
 ---------------------------------------------------------------------------------
