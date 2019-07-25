@@ -7,9 +7,8 @@
 
 module Barrier.Clubhouse.Types where
 
-import           Data.Aeson              (Array, FromJSON, ToJSON, Value, eitherDecodeStrict,
-                                          genericToJSON, parseJSON, toJSON, withArray, withObject,
-                                          withText, (.:), (.:?))
+import           Data.Aeson              (FromJSON, ToJSON, eitherDecodeStrict, genericToJSON,
+                                          parseJSON, toJSON, withObject, withText, (.:), (.:?))
 import           Data.Aeson.Casing       (aesonDrop, snakeCase)
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString.Char8   as C
@@ -29,7 +28,7 @@ import           URI.ByteString          (Absolute, URIRef, parseURI, strictURIP
 --------------------------------------------------------------------------------
 newtype ClubhouseLink = ClubhouseLink
   { unClubhouseLink :: URIRef Absolute
-  } deriving (Show)
+  } deriving (Eq, Show)
 
 
 --------------------------------------------------------------------------------
@@ -42,7 +41,7 @@ data Story = Story
 
 
 --------------------------------------------------------------------------------
-data CustomParseError =
+newtype CustomParseError =
   UrlParseError String
   deriving (Show)
 

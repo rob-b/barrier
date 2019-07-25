@@ -38,11 +38,6 @@ import           URI.ByteString          (Absolute, URIParseError (OtherError), 
                                           pathL, serializeURIRef', strictURIParserOptions)
 
 
-newtype ClubhouseLink = ClubhouseLink
-  { unClubhouseLink :: URIRef Absolute
-  } deriving (Eq, Show)
-
-
 --------------------------------------------------------------------------------
 noVerifyTlsManagerSettings :: Client.ManagerSettings
 noVerifyTlsManagerSettings =
