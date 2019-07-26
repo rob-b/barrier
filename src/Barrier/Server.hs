@@ -130,10 +130,16 @@ logDebugShow s = logDebugString $ show s
 handleCh :: ApiAction a
 handleCh = do
   decodeChEvent <$> body >>= \case
-    Left err -> json (errorObject (422 :: Int) (C.pack err))
+    Left err -> do
+      setStatus status422
+      json (errorObject (422 :: Int) (C.pack err))
     Right chEvent -> do
       decodeChReferences <$> body >>= \case
-        Left err -> logError $ T.pack ("Unable to parse references " ++ show err)
+        Left err -> do
+          let reason = "Unable to parse references " ++ show err
+          logError (T.pack reason)
+          setStatus status422
+          json (errorObject (422 :: Int) (C.pack reason))
         Right references -> do
           logDebugShow references
           forM_ (chActions chEvent) $ \action -> do
