@@ -31,6 +31,7 @@ import           Data.ByteString                      (ByteString)
 import qualified Data.ByteString.Char8                as C
 import           Data.HVect                           (HVect ((:&:), HNil))
 import qualified Data.IntMap                          as IntMap
+import           Data.Maybe                           (fromMaybe)
 import qualified Data.Text                            as T
 import           Data.Text.Encoding                   (decodeUtf8)
 import qualified Data.Vector                          as V
@@ -144,8 +145,8 @@ handleCh = do
           logDebugShow references
           forM_ (chActions chEvent) $ \action -> do
             logDebugString (show action)
-            let newState = chNewState (chActionWorkflowState action)
-            let matched = IntMap.filterWithKey (\key _ -> key == newState) references
+            let newState = chNewState <$> chActionWorkflowState action
+            let matched = IntMap.filterWithKey (\key _ -> key == fromMaybe 0 newState) references
             logDebugShow matched
             json matched
       json chEvent

@@ -19,7 +19,7 @@ import           Data.Text               (Text)
 import qualified Data.Text               as T
 import           GHC.Generics            (Generic)
 
-import           Data.Aeson.BetterErrors (Parse, asIntegral, asText, key, toAesonParser)
+import           Data.Aeson.BetterErrors (Parse, asIntegral, asText, key, keyMay, toAesonParser)
 import qualified Data.Aeson.BetterErrors as BetterErrors
 import           Data.Text.Encoding      (encodeUtf8)
 import           URI.ByteString          (Absolute, URIRef, parseURI, strictURIParserOptions)
@@ -149,14 +149,14 @@ data ClubhouseAction = ClubhouseAction
   { chActionId            :: Int
   , chActionAction        :: Text
   , chActionEntityType    :: Text
-  , chActionName          :: Text
-  , chActionWorkflowState :: ClubhouseWorkflowState
+  , chActionName          :: Maybe Text
+  , chActionWorkflowState :: Maybe ClubhouseWorkflowState
   } deriving (Show, Generic)
 
 
 --------------------------------------------------------------------------------
 asClubhouseAction :: Parse e ClubhouseAction
-asClubhouseAction = ClubhouseAction <$> key "id" asIntegral <*> key "action" asText <*> key "entity_type" asText <*> key "name" asText <*> key "changes" asClubhouseWorkflowState
+asClubhouseAction = ClubhouseAction <$> key "id" asIntegral <*> key "action" asText <*> key "entity_type" asText <*> keyMay "name" asText <*> keyMay "changes" asClubhouseWorkflowState
 
 
 --------------------------------------------------------------------------------
