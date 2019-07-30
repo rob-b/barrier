@@ -1,0 +1,47 @@
+{
+    "changed_at": "2019-07-30T09:24:11.682Z",
+    "primary_id": 500019021,
+    "references": [
+        {
+            "id": 500009863,
+            "entity_type": "workflow-state",
+            "name": "Needs testing",
+            "type": "started"
+        },
+        {
+            "id": 500018806,
+            "entity_type": "workflow-state",
+            "name": "Ready for Review",
+            "type": "started"
+        }
+    ],
+    "actions": [
+        {
+            "id": 500019021,
+            "entity_type": "pull-request",
+            "action": "close",
+            "number": 1779,
+            "title": "Auto retry failed payments",
+            "url": "https://github.com/ZeroDeposit/zd-web/pull/1779"
+        },
+        {
+            "id": 5716,
+            "entity_type": "story",
+            "action": "update",
+            "name": "Auto Retry Failed Payments",
+            "story_type": "feature",
+            "app_url": "https://app.clubhouse.io/zerodeposit/story/5716",
+            "changes": {
+                "workflow_state_id": {
+                    "new": 500009863,
+                    "old": 500018806
+                }
+            }
+        }
+    ],
+    "member_id": "5941588f-dedd-4409-bf5a-e68f33097032",
+    "external_id": "c9fe2aa0-b2ab-11e9-8ca9-52f6912dad7c",
+    "id": "5d400cbb-d301-4eb1-9f25-8c1705466ee1",
+    "version": "v1",
+    "webhook_id": "594108a6-bb51-4361-910a-fa5967c510e9"
+}
