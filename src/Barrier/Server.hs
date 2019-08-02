@@ -10,7 +10,11 @@ module Barrier.Server
    where
 
 
-import           Barrier.Clubhouse.Types              (chActionWorkflowState, chActions,
+import           Barrier.Clubhouse.Types              (ClubhouseAction,
+                                                       ClubhouseActionEntityType (ChaStory),
+                                                       ClubhouseEvent (ClubhouseEvent),
+                                                       chActionEntityType, chActionName,
+                                                       chActionWorkflowState, chActions,
                                                        chNewState, decodeChEvent,
                                                        decodeChReferences)
 import           Barrier.Config                       (AppConfig, configGitHubSecret, lookupEnv,
@@ -23,10 +27,11 @@ import           Control.Concurrent.STM.TBMQueue      (TBMQueue, closeTBMQueue)
 import           Control.Exception.Safe               (bracket)
 import           Control.Logger.Simple                (LogConfig (LogConfig), logDebug, logError,
                                                        withGlobalLogging)
-import           Control.Monad                        (forM_, void)
+import           Control.Monad                        (foldM, forM, forM_, join, void)
 import           Control.Monad.IO.Class               (MonadIO, liftIO)
 import           Control.Monad.STM                    (atomically)
-import           Data.Aeson                           (ToJSON, Value, object, (.=))
+import           Data.Aeson                           (Object, ToJSON, Value, object, (.=))
+import           Data.Aeson.Types                     (KeyValue)
 import           Data.ByteString                      (ByteString)
 import qualified Data.ByteString.Char8                as C
 import           Data.HVect                           (HVect ((:&:), HNil))
@@ -118,38 +123,63 @@ app = do
 
 
 ---------------------------------------------------------------------------------
-logDebugString :: MonadIO m => String -> m ()
-logDebugString s = logDebug $ T.pack s
-
-
----------------------------------------------------------------------------------
-logDebugShow :: (Show a, MonadIO m) => a -> m ()
-logDebugShow s = logDebugString $ show s
-
-
----------------------------------------------------------------------------------
 handleCh :: ApiAction a
 handleCh = do
-  decodeChEvent <$> body >>= \case
+  decodeChEventFilterStory <$> body >>= \case
     Left err -> do
       setStatus status422
       json (errorObject (422 :: Int) (C.pack err))
     Right chEvent -> do
-      decodeChReferences <$> body >>= \case
-        Left err -> do
-          let reason = "Unable to parse references " ++ show err
-          logError (T.pack reason)
-          setStatus status422
-          json (errorObject (422 :: Int) (C.pack reason))
-        Right references -> do
-          logDebugShow references
-          forM_ (chActions chEvent) $ \action -> do
-            logDebugString (show action)
-            let newState = chNewState <$> chActionWorkflowState action
-            let matched = IntMap.filterWithKey (\key _ -> key == fromMaybe 0 newState) references
-            logDebugShow matched
-            json matched
-      json chEvent
+      logDebug $ T.pack ("Decoded CH event: " ++ show chEvent)
+      output <- case chActions chEvent of
+        [] -> pure $ errorObject (422 :: Int) "Event did not include a story change"
+        actions -> do
+          decodeChReferences <$> body >>= \case
+            Left err -> do
+              setStatus status422
+              let reason = "Unable to parse references " ++ show err
+              logError (T.pack reason)
+              pure (errorObject (422 :: Int) (C.pack reason))
+            Right references -> do
+              logDebug $ T.pack ("Decoded references: " ++ show references)
+              _ <- foldM (explore references) [] actions
+              let result = concat $ forM actions (explore2 references)
+              pure . object $ result
+      json output
+
+
+explore2 :: (KeyValue kv, Show a) => IntMap.IntMap a -> ClubhouseAction -> [kv]
+explore2 references action = do
+  let newState = chNewState <$> chActionWorkflowState action
+  let matched = IntMap.filterWithKey (\key _ -> key == fromMaybe 0 newState) references
+  ["name" .= fromMaybe "N/A" (chActionName action)]
+
+
+--------------------------------------------------------------------------------
+explore
+  :: (Show a, MonadIO m)
+  => IntMap.IntMap a -> [ClubhouseAction] -> ClubhouseAction -> m [ClubhouseAction]
+explore references accum action = do
+  logDebug $ T.pack (show action)
+  let newStateM = chNewState <$> chActionWorkflowState action
+  let (newState2 :: ()) = (`IntMap.lookup` references) <$> 12
+  let newState = join ((`IntMap.lookup` references) <$> newStateM)
+  logDebug $ T.pack (show newState)
+  let matched = IntMap.filterWithKey (\key _ -> key == fromMaybe 0 newStateM) references
+  logDebug $ T.pack (show matched)
+  pure (accum ++ [action])
+
+
+decodeChEventFilterStory :: ByteString -> Either String ClubhouseEvent
+decodeChEventFilterStory bs = do
+  ClubhouseEvent . filter isChaStory . chActions <$> decodeChEvent bs
+
+
+isChaStory :: ClubhouseAction -> Bool
+isChaStory cha =
+  case chActionEntityType cha of
+    ChaStory -> True
+    _        -> False
 
 
 ---------------------------------------------------------------------------------

@@ -145,10 +145,31 @@ instance ToJSON ClubhouseEvent where
 
 
 --------------------------------------------------------------------------------
+data ClubhouseActionEntityType
+  = ChaStory
+  | ChaPullRequest
+  | ChaUnknown
+  deriving (Show, Generic)
+
+
+--------------------------------------------------------------------------------
+parseEntityType :: Text -> Either a2 ClubhouseActionEntityType
+parseEntityType t = case t of
+  "story"        -> Right ChaStory
+  "pull-request" -> Right ChaPullRequest
+  _              -> Right ChaUnknown
+
+
+--------------------------------------------------------------------------------
+instance ToJSON ClubhouseActionEntityType where
+  toJSON = genericToJSON $ aesonDrop 3 snakeCase
+
+
+--------------------------------------------------------------------------------
 data ClubhouseAction = ClubhouseAction
   { chActionId            :: Int
   , chActionAction        :: Text
-  , chActionEntityType    :: Text
+  , chActionEntityType    :: ClubhouseActionEntityType
   , chActionName          :: Maybe Text
   , chActionWorkflowState :: Maybe ClubhouseWorkflowState
   } deriving (Show, Generic)
@@ -156,7 +177,7 @@ data ClubhouseAction = ClubhouseAction
 
 --------------------------------------------------------------------------------
 asClubhouseAction :: Parse e ClubhouseAction
-asClubhouseAction = ClubhouseAction <$> key "id" asIntegral <*> key "action" asText <*> key "entity_type" asText <*> keyMay "name" asText <*> keyMay "changes" asClubhouseWorkflowState
+asClubhouseAction = ClubhouseAction <$> key "id" asIntegral <*> key "action" asText <*> key "entity_type" (BetterErrors.withText parseEntityType) <*> keyMay "name" asText <*> keyMay "changes" asClubhouseWorkflowState
 
 
 --------------------------------------------------------------------------------
