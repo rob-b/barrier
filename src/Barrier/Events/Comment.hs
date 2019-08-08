@@ -41,4 +41,4 @@ doThingForComment :: WrappedHook -> AppConfig -> IO ()
 doThingForComment hook _config = do
   let allLinks = extractClubhouseLinks hook
   logDebug . T.pack $ show allLinks
-  pure undefined
+  logDebug "doing thing for comment"
