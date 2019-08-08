@@ -8,9 +8,10 @@ module Barrier.Events.Comment where
 import           Barrier.Check                (extractClubhouseLinks)
 import           Barrier.Config               (AppConfig)
 import           Barrier.Events.Types         (WrappedHook (WrappedHookIssueComment))
+import           Control.Logger.Simple        (logDebug)
 import           Data.Aeson                   (Value, object, (.=))
+import qualified Data.Text                    as T
 import qualified Data.Vector                  as V
-import           Debug.Trace                  (traceShow)
 import           GitHub.Data.Webhooks.Events  (IssueCommentEvent,
                                                IssueCommentEventAction (IssueCommentCreatedAction),
                                                evIssueCommentAction, evIssueCommentPayload)
@@ -27,12 +28,17 @@ handleCommentEvent event =
 handleIssueCommentEventAction :: IssueCommentEvent -> Maybe (AppConfig -> IO ())
 handleIssueCommentEventAction issue = do
   payload <- getPayLoadFromIssue issue
-  let allLinks = extractClubhouseLinks payload
-  let links = traceShow allLinks allLinks
-  traceShow links $ pure undefined
+  pure $ doThingForComment payload
 
 
 getPayLoadFromIssue :: IssueCommentEvent -> Maybe WrappedHook
 getPayLoadFromIssue issue@(evIssueCommentAction -> IssueCommentCreatedAction) =
   Just . WrappedHookIssueComment $ evIssueCommentPayload issue
 getPayLoadFromIssue _ = Nothing
+
+
+doThingForComment :: WrappedHook -> AppConfig -> IO ()
+doThingForComment hook _config = do
+  let allLinks = extractClubhouseLinks hook
+  logDebug . T.pack $ show allLinks
+  pure undefined
