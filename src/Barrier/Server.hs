@@ -163,7 +163,7 @@ explore references accum action = do
   logDebug $ T.pack (show action)
   let newStateM = chNewState <$> chActionWorkflowState action
   -- let newState2 = (`IntMap.lookup` references) <$> undefined
-  let newState = join ((`IntMap.lookup` references) <$> newStateM)
+  let newState = (`IntMap.lookup` references) =<< newStateM
   logDebug $ T.pack (show newState)
   let matched = IntMap.filterWithKey (\key _ -> key == fromMaybe 0 newStateM) references
   logDebug $ T.pack (show matched)

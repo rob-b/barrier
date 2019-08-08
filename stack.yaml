@@ -4,4 +4,3 @@ packages:
 extra-deps:
   - simple-logger-0.0.4
   - github-webhooks-0.10.1
-local-bin-path: bin
