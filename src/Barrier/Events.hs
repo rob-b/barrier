@@ -85,3 +85,10 @@ payloadFromFixture = evPullReqPayload <$> eventFromFixture
 pullRequestPayloadFromFixture :: IO GitHub.PullRequest
 pullRequestPayloadFromFixture = do
   fromMaybe (error "cannot decode pull_request_payload.json") . decodeStrict <$> readFixture "pull_request_payload.json"
+
+
+
+issueCommentEventFromFixture :: IO (Maybe IssueCommentEvent)
+issueCommentEventFromFixture = do
+  fromMaybe (error "cannot decode issue_comment_created.json") . decodeStrict <$>
+    readFixture "issue_comment_created.json"

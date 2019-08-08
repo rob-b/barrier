@@ -15,7 +15,7 @@ import qualified Data.Vector                  as V
 import           GitHub.Data.Webhooks.Events  (IssueCommentEvent,
                                                IssueCommentEventAction (IssueCommentCreatedAction),
                                                evIssueCommentAction, evIssueCommentPayload)
-import           GitHub.Data.Webhooks.Payload (whIssueCommentBody)
+import           GitHub.Data.Webhooks.Payload (whIssueCommentBody, whIssueCommentUser, whUserLogin)
 
 
 handleCommentEvent :: IssueCommentEvent -> Value
@@ -27,14 +27,16 @@ handleCommentEvent event =
 
 handleIssueCommentEventAction :: IssueCommentEvent -> Maybe (AppConfig -> IO ())
 handleIssueCommentEventAction issue = do
-  payload <- getPayLoadFromIssue issue
-  pure $ doThingForComment payload
+  wrappedHook <- getWrappedHookFromIssue issue
+  if whUserLogin (whIssueCommentUser (evIssueCommentPayload issue)) == "robozd"
+    then Nothing
+    else Just $ doThingForComment wrappedHook
 
 
-getPayLoadFromIssue :: IssueCommentEvent -> Maybe WrappedHook
-getPayLoadFromIssue issue@(evIssueCommentAction -> IssueCommentCreatedAction) =
+getWrappedHookFromIssue :: IssueCommentEvent -> Maybe WrappedHook
+getWrappedHookFromIssue issue@(evIssueCommentAction -> IssueCommentCreatedAction) =
   Just . WrappedHookIssueComment $ evIssueCommentPayload issue
-getPayLoadFromIssue _ = Nothing
+getWrappedHookFromIssue _ = Nothing
 
 
 doThingForComment :: WrappedHook -> AppConfig -> IO ()

@@ -10,4 +10,16 @@ let wrappedHook = WrappedHookPullRequest payload
 getStoryLinkFromPayload payload
 links = maybeToList $ getStoryLinkFromPayload payload
 setPullRequestStatus links payload config
+
+```
+
+
+
+```
+import GitHub.Data.Webhooks.Events
+import GitHub.Data.Webhooks.Payload
+comment <- issueCommentEventFromFixture
+(Just xo) = evIssueCommentPayload <$> comment
+whUserLogin $ whIssueCommentUser xo
+(Just wrappedHook) = (getWrappedHookFromIssue =<< comment)
 ```
