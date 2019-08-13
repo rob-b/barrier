@@ -42,5 +42,8 @@ getWrappedHookFromIssue _ = Nothing
 doThingForComment :: WrappedHook -> AppConfig -> IO ()
 doThingForComment hook _config = do
   let allLinks = extractClubhouseLinks hook
-  logDebug . T.pack $ show allLinks
-  logDebug "doing thing for comment"
+  if null allLinks
+    then logDebug "No links found in this comment"
+    else do
+      let msg = "At this point we should do something for these links" ++ show allLinks
+      logDebug $ T.pack msg
