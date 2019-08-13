@@ -85,6 +85,7 @@ setPullRequestStatus hook config = do
       mapM_ (logDebug . T.pack . show) errors
       pure []
     Right stories -> pure $ ordNub stories
+  logDebug . T.pack $ show stories
   checkerAndUpdater config payload stories
 
 
@@ -159,7 +160,8 @@ getStoriesOrDieTrying config hook = do
   let storyFromRef :: [ClubhouseLink] = maybeToList $ getStoryLinkFromPayload payload
 
   -- try to get link(s) to the story from the PR description (ignoring any links we already found)
-  let links :: [ClubhouseLink] = filter (`elem` storyFromRef) (extractClubhouseLinks hook)
+  let links :: [ClubhouseLink] = filter (`notElem` storyFromRef) (extractClubhouseLinks hook)
+  logDebug . T.pack $ show links
 
   -- stories gathered from the PR refname
   s <- mapM (getStoryForLink config) storyFromRef
@@ -168,6 +170,7 @@ getStoriesOrDieTrying config hook = do
   -- stories gathered from the PR description
   ss <- mapM (getStoryForLink config) links
   descStories <- traverse runExceptT ss
+  logDebug . T.pack $ show descStories
 
   -- stories gathered from the PR comments
   issueCommentsE <- getCommentsForPullRequest config payload
@@ -175,6 +178,7 @@ getStoriesOrDieTrying config hook = do
     case issueCommentsE of
       Left err    -> pure [Left (StoryHttpError (show err))]
       Right comms -> storiesFromComments comms
+  logDebug . T.pack $ show issueComments
 
   pure $
     sequenceEithers
