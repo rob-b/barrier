@@ -27,10 +27,10 @@ import           Control.Concurrent.STM.TBMQueue      (TBMQueue, closeTBMQueue)
 import           Control.Exception.Safe               (bracket)
 import           Control.Logger.Simple                (LogConfig (LogConfig), logDebug, logError,
                                                        withGlobalLogging)
-import           Control.Monad                        (foldM, forM, forM_, join, void)
+import           Control.Monad                        (foldM, forM, void)
 import           Control.Monad.IO.Class               (MonadIO, liftIO)
 import           Control.Monad.STM                    (atomically)
-import           Data.Aeson                           (Object, ToJSON, Value, object, (.=))
+import           Data.Aeson                           (ToJSON, Value, object, (.=))
 import           Data.Aeson.Types                     (KeyValue)
 import           Data.ByteString                      (ByteString)
 import qualified Data.ByteString.Char8                as C

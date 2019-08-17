@@ -37,12 +37,12 @@ import           Text.Regex.PCRE.Heavy        (re, scan)
 
 --------------------------------------------------------------------------------
 -- | Given an PullRequestEvent, extract its inner payload
-getPayLoadFromPr :: PullRequestEvent -> Maybe WrappedHook
-getPayLoadFromPr pr@(evPullReqAction -> PullRequestOpenedAction) = Just $ WrappedHookPullRequest (evPullReqPayload pr)
-getPayLoadFromPr pr@(evPullReqAction -> PullRequestEditedAction) = Just $ WrappedHookPullRequest (evPullReqPayload pr)
-getPayLoadFromPr pr@(evPullReqAction -> PullRequestReopenedAction) = Just $ WrappedHookPullRequest (evPullReqPayload pr)
-getPayLoadFromPr pr@(syncCheck -> True) = Just $ WrappedHookPullRequest (evPullReqPayload pr)
-getPayLoadFromPr _ = Nothing
+getPullRequestFromEvent :: PullRequestEvent -> Maybe WrappedHook
+getPullRequestFromEvent pr@(evPullReqAction -> PullRequestOpenedAction) = Just $ WrappedHookPullRequest (evPullReqPayload pr)
+getPullRequestFromEvent pr@(evPullReqAction -> PullRequestEditedAction) = Just $ WrappedHookPullRequest (evPullReqPayload pr)
+getPullRequestFromEvent pr@(evPullReqAction -> PullRequestReopenedAction) = Just $ WrappedHookPullRequest (evPullReqPayload pr)
+getPullRequestFromEvent pr@(syncCheck -> True) = Just $ WrappedHookPullRequest (evPullReqPayload pr)
+getPullRequestFromEvent _ = Nothing
 
 
 --------------------------------------------------------------------------------
@@ -51,7 +51,7 @@ handlePullRequestEvent :: PullRequestEvent -> Value
 handlePullRequestEvent event =
   let inner = V.singleton $ object ["base" .= (ref :: Text)]
       ref = maybe "Dunno." (whPullReqTargetRef . whPullReqHead) payload
-      payload = unWrapHookPullRequest <$> getPayLoadFromPr event
+      payload = unWrapHookPullRequest <$> getPullRequestFromEvent event
   in object ["data" .= inner]
 
 
@@ -59,7 +59,7 @@ handlePullRequestEvent event =
 -- | Select the appropriate action to perform on an incoming PullRequestEvent
 handlePullRequestAction :: PullRequestEvent -> Maybe (AppConfig -> IO ())
 handlePullRequestAction pr = do
-  payload <- getPayLoadFromPr pr
+  payload <- getPullRequestFromEvent pr
   pure $ setPullRequestStatus payload
 
 
