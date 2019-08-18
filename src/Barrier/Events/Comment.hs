@@ -67,10 +67,6 @@ doThingForComment hook _config = do
       logDebug $ T.pack msg
 
 
-bar :: Maybe (Id Int)
-bar = resourceIdFromUrl $ URL
-  "https://github.com/ZeroDeposit/zd-web/pull/1837#issuecomment-521983374"
-
 
 resourceIdFromUrl :: URL -> Maybe (Id Int)
 resourceIdFromUrl url =
