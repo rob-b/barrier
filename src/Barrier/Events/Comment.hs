@@ -13,22 +13,12 @@ import           Data.Monoid                  ((<>))
 import qualified Data.Text                    as T
 import           Data.Text.Encoding           (encodeUtf8)
 import qualified Data.Vector                  as V
-import           GitHub.Data.Id               (Id(Id))
-import           GitHub.Data.Webhooks.Events
-    ( IssueCommentEvent
-    , IssueCommentEventAction(IssueCommentCreatedAction, IssueCommentEditedAction)
-    , evIssueCommentAction
-    , evIssueCommentPayload
-    )
-import           GitHub.Data.Webhooks.Payload
-    ( HookIssueComment
-    , URL(URL)
-    , getUrl
-    , whIssueCommentBody
-    , whIssueCommentHtmlUrl
-    , whIssueCommentUser
-    , whUserLogin
-    )
+import           GitHub.Data.Id               (Id (Id))
+import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, IssueCommentEventAction (IssueCommentCreatedAction, IssueCommentEditedAction),
+                                               evIssueCommentAction, evIssueCommentPayload)
+import           GitHub.Data.Webhooks.Payload (HookIssueComment, URL, getUrl, whIssueCommentBody,
+                                               whIssueCommentHtmlUrl, whIssueCommentUser,
+                                               whUserLogin)
 import           URI.ByteString               (parseURI, strictURIParserOptions, uriPath)
 
 
@@ -59,7 +49,8 @@ doThingForComment :: HookIssueComment -> AppConfig -> IO ()
 doThingForComment hook _config = do
   let allLinks = extractClubhouseLinks2 (whIssueCommentBody hook)
   if null allLinks
-    then logDebug ("No links found in this comment " <> getUrl (whIssueCommentHtmlUrl hook))
+    then logDebug
+      ("No links found in this comment " <> getUrl (whIssueCommentHtmlUrl hook))
     else do
       let
         msg = "At this point we should do something for these links"
@@ -74,6 +65,7 @@ resourceIdFromUrl url =
     Left  _      -> Nothing
     Right parsed -> getId (C.split '/' (uriPath parsed))
      where
-      getId (_ : _org : _repo : _resource : issueId : _) =
-        maybe Nothing (\(i, _bs) -> Just (Id i)) (C.readInt issueId)
+      getId (_ : _org : _repo : _resource : issueId : _) = do
+        (i, _) <- C.readInt issueId
+        Just $ Id i
       getId _ = Nothing
