@@ -10,7 +10,6 @@ import           Barrier.Clubhouse.Types          (Story, storyUrl)
 import           Barrier.Config                   (AppConfig, configGitHubToken)
 import           Control.Logger.Simple            (logDebug)
 import qualified Data.ByteString                  as B
-import           Data.Proxy                       (Proxy (Proxy))
 import           Data.Text                        (Text)
 import qualified Data.Text                        as T
 import           Data.Text.Encoding               (decodeUtf8, encodeUtf8)
@@ -52,7 +51,7 @@ mkStatusParams pr =
 
 --------------------------------------------------------------------------------
 data GitHubCommentRequestParams = GitHubCommentRequestParams
-  { _commentIssue :: GitHub.Id GitHub.Issue
+  { _commentIssue :: GitHub.IssueNumber
   , _commentOwner :: GitHub.Name GitHub.Owner
   , _commentRepo  :: GitHub.Name GitHub.Repo
   } deriving (Show)
@@ -125,11 +124,11 @@ statusesFor auth' owner' repo' sha' =
 
 
 -- | partial function that relies on github's promise to always return a valid issue url
-getIssueId :: B.ByteString -> GitHub.Id GitHub.Issue
+getIssueId :: B.ByteString -> GitHub.IssueNumber
 getIssueId url =
   let path = either (error . show) id $ uriPath <$> parseURI strictURIParserOptions url
       segments = B.split 47 path
-      issueId = maybe (error "oh no") (GitHub.mkId (Proxy :: Proxy GitHub.Issue)) (getId segments)
+      issueId = maybe (error "oh no") GitHub.IssueNumber (getId segments)
   in issueId
   where
     getId :: [B.ByteString] -> Maybe Int
@@ -153,7 +152,7 @@ addStoryLinkComment conf pr story = do
       auth'
       (params ^. commentOwner)
       (params ^. commentRepo)
-      (params ^. commentIssue)
+      ((params ^. commentIssue) :: GitHub.IssueNumber)
       (decodeUtf8 . serializeURIRef' $ storyUrl story)
   logDebug $ T.pack (show content)
 
@@ -188,7 +187,6 @@ randomWarning conf pr = do
           (params ^. commentIssue)
           "Your move, creep"
       pure ()
-
 
 -- updatePullRequest :: AppConfig -> HookPullRequest -> Story -> IO ()
 -- updatePullRequest conf pr story = do

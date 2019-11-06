@@ -19,7 +19,6 @@ import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as B
 import qualified Data.ByteString.Char8   as C
 import           Data.ByteString.Lazy    (toStrict)
-import           Data.Default.Class      (def)
 import           Data.Monoid             ((<>))
 import           Data.Text.Encoding      (decodeUtf8)
 import           Lens.Micro.Platform     ((^.))
@@ -30,9 +29,10 @@ import qualified Network.HTTP.Client     as Client
 import           Network.HTTP.Client.TLS (mkManagerSettings)
 import           Network.HTTP.Req        (GET (GET), HttpConfig,
                                           HttpException (VanillaHttpException), LbsResponse,
-                                          NoReqBody (NoReqBody), httpConfigAltManager,
-                                          httpConfigCheckResponse, lbsResponse, parseUrlHttps, req,
-                                          responseBody, responseStatusCode, runReq, (=:))
+                                          NoReqBody (NoReqBody), defaultHttpConfig,
+                                          httpConfigAltManager, httpConfigCheckResponse,
+                                          lbsResponse, parseUrlHttps, req, responseBody,
+                                          responseStatusCode, runReq, (=:))
 import           Network.HTTP.Types      (statusCode)
 import           URI.ByteString          (Absolute, URIParseError (OtherError), URIRef, parseURI,
                                           pathL, serializeURIRef', strictURIParserOptions)
@@ -64,7 +64,7 @@ noTlsHttpConfig = do
 
 --------------------------------------------------------------------------------
 httpConfig :: HttpConfig
-httpConfig = def {httpConfigCheckResponse = check}
+httpConfig = defaultHttpConfig {httpConfigCheckResponse = check}
 
 
 --------------------------------------------------------------------------------
