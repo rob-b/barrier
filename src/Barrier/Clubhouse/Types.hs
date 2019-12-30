@@ -1,9 +1,10 @@
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Barrier.Clubhouse.Types where
 
@@ -17,9 +18,11 @@ import qualified Data.IntMap             as IntMap
 import           Data.Monoid             ((<>))
 import           Data.Text               (Text)
 import qualified Data.Text               as T
+import           Debug.Trace
 import           GHC.Generics            (Generic)
 
-import           Data.Aeson.BetterErrors (Parse, asIntegral, asText, key, keyMay, toAesonParser)
+import           Data.Aeson.BetterErrors (Parse, asIntegral, asText, key, keyMay, toAesonParser,
+                                          (<|>))
 import qualified Data.Aeson.BetterErrors as BetterErrors
 import           Data.Text.Encoding      (encodeUtf8)
 import           URI.ByteString          (Absolute, URIRef, parseURI, strictURIParserOptions)
@@ -171,13 +174,20 @@ data ClubhouseAction = ClubhouseAction
   , chActionAction        :: Text
   , chActionEntityType    :: ClubhouseActionEntityType
   , chActionName          :: Maybe Text
-  , chActionWorkflowState :: Maybe ClubhouseWorkflowState
+  , chActionWorkflowState :: WorkflowStateOptions
   } deriving (Show, Generic)
 
 
 --------------------------------------------------------------------------------
 asClubhouseAction :: Parse e ClubhouseAction
-asClubhouseAction = ClubhouseAction <$> key "id" asIntegral <*> key "action" asText <*> key "entity_type" (BetterErrors.withText parseEntityType) <*> keyMay "name" asText <*> keyMay "changes" asClubhouseWorkflowState
+asClubhouseAction =
+  ClubhouseAction <$> key "id" asIntegral <*> key "action" asText <*> key "entity_type" (BetterErrors.withText parseEntityType) <*> keyMay "name" asText <*> asWorkflowStateOptions
+
+
+asWorkflowStateOptions :: Parse e WorkflowStateOptions
+asWorkflowStateOptions =
+  (ClubhouseWorkflowChanged <$> key "changes" asClubhouseWorkflowState) <|>
+  (ClubhouseWorkflowCreated <$> key "workflow_state_id" asIntegral)
 
 
 --------------------------------------------------------------------------------
@@ -191,10 +201,31 @@ instance ToJSON ClubhouseAction where
 
 
 --------------------------------------------------------------------------------
+newtype WorkFlowId = WorkFlowId
+  { getWorkFlowId :: Int
+  } deriving (Generic, Show, Real, Num, Ord, Eq, Enum, Integral)
+
+data WorkflowStateOptions
+  = ClubhouseWorkflowChanged ClubhouseWorkflowState
+  | ClubhouseWorkflowCreated WorkFlowId
+  deriving (Show, Generic)
+
 data ClubhouseWorkflowState = ClubhouseWorkflowState
-  { chOldState :: Int
-  , chNewState :: Int
+  { chOldState :: WorkFlowId
+  , chNewState :: WorkFlowId
   } deriving (Show, Generic)
+
+
+
+instance ToJSON WorkflowStateOptions where
+  toJSON  = genericToJSON $ aesonDrop 2 snakeCase
+
+
+instance FromJSON WorkflowStateOptions where
+  parseJSON = BetterErrors.toAesonParser' asWorkflowStateOptions
+
+instance ToJSON WorkFlowId where
+  toJSON  = genericToJSON $ aesonDrop 3 snakeCase
 
 
 --------------------------------------------------------------------------------
@@ -209,7 +240,8 @@ instance ToJSON ClubhouseWorkflowState where
 
 --------------------------------------------------------------------------------
 asClubhouseWorkflowState :: Parse e ClubhouseWorkflowState
-asClubhouseWorkflowState = ClubhouseWorkflowState <$> key "workflow_state_id" (key "old" asIntegral) <*> key "workflow_state_id" (key "new" asIntegral)
+asClubhouseWorkflowState =
+  ClubhouseWorkflowState <$> key "workflow_state_id" (key "old" asIntegral) <*> key "workflow_state_id" (key "new" asIntegral)
 
 
 --------------------------------------------------------------------------------

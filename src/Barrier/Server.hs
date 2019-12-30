@@ -13,9 +13,10 @@ module Barrier.Server
 import           Barrier.Clubhouse.Types              (ClubhouseAction,
                                                        ClubhouseActionEntityType (ChaStory),
                                                        ClubhouseEvent (ClubhouseEvent),
-                                                       chActionEntityType, chActionName,
+                                                       ClubhouseReferences, chActionEntityType,
+                                                       chActionId, chActionName,
                                                        chActionWorkflowState, chActions,
-                                                       chNewState, decodeChEvent,
+                                                       chNewState, chOldState, decodeChEvent,
                                                        decodeChReferences)
 import           Barrier.Config                       (AppConfig, configGitHubSecret, lookupEnv,
                                                        mkAppConfig)
@@ -30,9 +31,10 @@ import           Control.Logger.Simple                (LogConfig (LogConfig), lo
 import           Control.Monad                        (foldM, forM, void)
 import           Control.Monad.IO.Class               (MonadIO, liftIO)
 import           Control.Monad.STM                    (atomically)
-import           Data.Aeson                           (ToJSON, Value, object, (.=))
-import           Data.Aeson.Types                     (KeyValue)
+import           Data.Aeson                           (ToJSON, Value (Array), eitherDecodeStrict,
+                                                       object, (.=))
 import           Data.ByteString                      (ByteString)
+import qualified Data.ByteString                      as B
 import qualified Data.ByteString.Char8                as C
 import           Data.HVect                           (HVect ((:&:), HNil))
 import qualified Data.IntMap                          as IntMap
@@ -40,7 +42,7 @@ import           Data.Maybe                           (fromMaybe)
 import qualified Data.Text                            as T
 import           Data.Text.Encoding                   (decodeUtf8)
 import qualified Data.Vector                          as V
-import           Debug.Trace                          (trace)
+import           Debug.Trace                          (trace, traceShow)
 import           GitHub.Data.Webhooks.Secure          (isSecurePayload)
 import           Network.HTTP.Types.Status            (Status (Status), status401, status422)
 import           Network.Wai                          (Application, Middleware)
@@ -118,56 +120,114 @@ app = do
       handleCh
   get "/a" $ do
       queue <- appStateQueue <$> getState
-      _ <- liftIO $ Q.add queue (void xo)
+      _ <- liftIO $ Q.add queue (void handleA)
       json ("{}" :: Value)
+
+
+---------------------------------------------------------------------------------
+handleA :: IO ()
+handleA = do
+  _ <- appendFile "example.txt" "this is my content\n"
+  pure ()
 
 
 ---------------------------------------------------------------------------------
 handleCh :: ApiAction a
 handleCh = do
-  decodeChEventFilterStory <$> body >>= \case
+  bodyContent <- body
+  case convertBodyToEvent bodyContent of
     Left err -> do
+      logError (T.pack err)
       setStatus status422
       json (errorObject (422 :: Int) (C.pack err))
-    Right chEvent -> do
-      logDebug $ T.pack ("Decoded CH event: " ++ show chEvent)
-      output <- case chActions chEvent of
-        [] -> pure $ errorObject (422 :: Int) "Event did not include a story change"
-        actions -> do
-          decodeChReferences <$> body >>= \case
-            Left err -> do
-              setStatus status422
-              let reason = "Unable to parse references " ++ show err
-              logError (T.pack reason)
-              pure (errorObject (422 :: Int) (C.pack reason))
-            Right references -> do
-              logDebug $ T.pack ("Decoded references: " ++ show references)
-              _ <- foldM (explore references) [] actions
-              let result = concat $ forM actions (explore2 references)
-              pure . object $ result
-      json output
-
-
-explore2 :: (KeyValue kv, Show a) => IntMap.IntMap a -> ClubhouseAction -> [kv]
-explore2 references action = do
-  let newState = chNewState <$> chActionWorkflowState action
-  let matched = IntMap.filterWithKey (\key _ -> key == fromMaybe 0 newState) references
-  ["name" .= fromMaybe "N/A" (chActionName action)]
+    Right thing -> do
+      json thing
 
 
 --------------------------------------------------------------------------------
-explore
-  :: (Show a, MonadIO m)
-  => IntMap.IntMap a -> [ClubhouseAction] -> ClubhouseAction -> m [ClubhouseAction]
-explore references accum action = do
-  logDebug $ T.pack (show action)
-  let newStateM = chNewState <$> chActionWorkflowState action
-  -- let newState2 = (`IntMap.lookup` references) <$> undefined
-  let newState = (`IntMap.lookup` references) =<< newStateM
-  logDebug $ T.pack (show newState)
-  let matched = IntMap.filterWithKey (\key _ -> key == fromMaybe 0 newStateM) references
-  logDebug $ T.pack (show matched)
-  pure (accum ++ [action])
+xo :: FilePath -> IO ()
+xo fname = do
+  input <- B.readFile fname
+  print $ convertBodyToEvent input
+
+
+--------------------------------------------------------------------------------
+expandActions :: ByteString -> [ClubhouseAction] -> Either String Value
+expandActions _ [] = Left "Event did not include a story change"
+expandActions input actions = do
+  -- case (eitherDecodeStrict input :: Either String ClubhouseReferences) of
+  --   Left e     -> undefined
+  --   Right refs -> trace (show refs) undefined
+  case decodeChReferences input of
+    Left err -> Left err
+    Right (references :: IntMap.IntMap T.Text) -> do
+      let objects = combiner references actions
+      pure . Array $ V.fromList objects
+
+
+combiner :: (Foldable t) => IntMap.IntMap T.Text -> t ClubhouseAction -> [Value]
+combiner references actions =
+  foldr (\action acc -> acc <> [defineActionChanges references action]) [] actions
+
+
+--------------------------------------------------------------------------------
+convertBodyToEvent :: ByteString -> Either String Value
+convertBodyToEvent input =
+  -- the input is the encoded json of a clubhouse event. Try and extract a clubhouse event from
+  -- this json but only when at least one of its actions have the entity_type of "story"
+  case mkChEventWithStories input of
+    Left err -> Left err
+    Right chEvent -> do
+      output <- case chActions chEvent of
+        -- we know that mkChEventWithStories should guarantee that the actions is not empty but
+        -- that's not promised at the type level so we need to check still
+        [] -> Left "Event did not include a story change"
+        actions -> do
+          case expandActions input actions of
+            Left err -> do
+              let reason = "Unable to parse references " ++ show err
+              Left reason
+            Right expandedActions -> do
+              pure expandedActions
+      pure output
+
+
+--------------------------------------------------------------------------------
+defineActionChanges :: IntMap.IntMap T.Text -> ClubhouseAction -> Value
+defineActionChanges references action = do
+  let na = traceShow action ("N/A" :: T.Text)
+  let prevState = Nothing -- chOldState <$> chActionWorkflowState action
+  let currentState = Nothing -- chNewState <$> chActionWorkflowState action
+  let matched = IntMap.filterWithKey (\key _ -> key == fromMaybe 0 currentState) references
+  object
+    [ "name" .= fromMaybe na (chActionName action)
+    , "id" .= chActionId action
+    , "new_state" .= maybe (Just na) (`IntMap.lookup` references) currentState
+    , "old_state" .= maybe (Just na) (`IntMap.lookup` references) prevState
+    ]
+
+
+--------------------------------------------------------------------------------
+-- explore
+--   :: (Show a, MonadIO m)
+--   => IntMap.IntMap a -> [ClubhouseAction] -> ClubhouseAction -> m [ClubhouseAction]
+-- explore references accum action = do
+--   logDebug $ T.pack (show action)
+--   let newStateM = chNewState <$> chActionWorkflowState action
+--   -- let newState2 = (`IntMap.lookup` references) <$> undefined
+--   let newState = (`IntMap.lookup` references) =<< newStateM
+--   logDebug $ T.pack (show newState)
+--   let matched = IntMap.filterWithKey (\key _ -> key == fromMaybe 0 newStateM) references
+--   logDebug $ T.pack (show matched)
+--   pure (accum ++ [action])
+
+
+mkChEventWithStories :: ByteString -> Either String ClubhouseEvent
+mkChEventWithStories bs = do
+  stories <- filter isChaStory . chActions <$> decodeChEvent bs
+  if null stories
+    then Left "Event has no actions where entity_type is \"story\""
+    else Right $ ClubhouseEvent stories
 
 
 decodeChEventFilterStory :: ByteString -> Either String ClubhouseEvent
@@ -202,13 +262,6 @@ handleEvent = do
           _ <- trace "queing action" (liftIO $ Q.add queue (void $ action config))
           pure ()
       json (selectResponse wrappedEvent)
-
-
---------------------------------------------------------------------------------
-xo :: IO ()
-xo = do
-  _ <- appendFile "example.txt" "this is my content\n"
-  pure ()
 
 
 --------------------------------------------------------------------------------
