@@ -241,7 +241,14 @@ mkChEventWithStories bs = do
     else Right $ ClubhouseEvent stories
 
 
---------------------------------------------------------------------------------
+mkChEventWithStories :: ByteString -> Either String ClubhouseEvent
+mkChEventWithStories bs = do
+  stories <- filter isChaStory . chActions <$> decodeChEvent bs
+  if null stories
+    then Left "Event has no actions where entity_type is \"story\""
+    else Right $ ClubhouseEvent stories
+
+
 decodeChEventFilterStory :: ByteString -> Either String ClubhouseEvent
 decodeChEventFilterStory bs = do
   ClubhouseEvent . filter isChaStory . chActions <$> decodeChEvent bs
