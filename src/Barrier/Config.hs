@@ -14,6 +14,7 @@ data AppConfig = AppConfig
   , configClubhouseToken :: ByteString
   , configGitHubSecret   :: ByteString
   , configEnvironment    :: Environment
+  , configGitHubBot      :: ByteString
   } deriving (Show)
 
 
@@ -48,9 +49,11 @@ mkAppConfig = do
   chTokenM <- lookupEnv "CLUBHOUSE_API_TOKEN"
   ghTokenM <- lookupEnv "GITHUB_API_TOKEN"
   ghSecretM <- lookupEnv "GITHUB_KEY"
+  let ghBot = "robozd"
   (environmentNameM :: Maybe String) <- lookupEnv "BARRIER_ENV"
   let environment = mkEnvironment =<< environmentNameM
-  pure $ AppConfig <$> ghTokenM <*> chTokenM <*> ghSecretM <*> environment
+  let cfg = AppConfig <$> ghTokenM <*> chTokenM <*> ghSecretM <*> environment
+  pure $ fmap (\cfg' -> cfg' ghBot) cfg
 
 
 --------------------------------------------------------------------------------
