@@ -10,33 +10,42 @@ module Barrier.Server
    where
 
 
-import           Barrier.Clubhouse.Types              (ClubhouseAction,
-                                                       ClubhouseActionEntityType (ChaStory),
-                                                       ClubhouseEvent (ClubhouseEvent),
-                                                       ClubhouseReferences, chActionEntityType,
-                                                       chActionId, chActionName,
-                                                       chActionWorkflowState, chActions,
-                                                       chNewState, chOldState, decodeChEvent,
-                                                       decodeChReferences)
-import           Barrier.Config                       (AppConfig, configGitHubSecret, lookupEnv,
-                                                       mkAppConfig)
-import           Barrier.Events                       (selectAction, selectEventType,
-                                                       selectResponse)
+import           Barrier.Clubhouse.Types
+    ( ClubhouseAction
+    , ClubhouseActionEntityType(ChaStory)
+    , ClubhouseEvent(ClubhouseEvent)
+    , ClubhouseWorkflowState
+    , WorkFlowId
+    , WorkflowStateOptions(ClubhouseWorkflowChanged, ClubhouseWorkflowCreated)
+    , chActionEntityType
+    , chActionId
+    , chActionName
+    , chActionWorkflowState
+    , chActions
+    , chNewState
+    , chOldState
+    , decodeChEvent
+    , decodeChReferences
+    , getWorkFlowId
+    )
+import           Barrier.Config
+    (AppConfig, configGitHubSecret, lookupEnv, mkAppConfig)
+import           Barrier.Events
+    (selectAction, selectEventType, selectResponse)
 import qualified Barrier.Queue                        as Q
 import           Control.Concurrent.Async             (Async, async, wait)
 import           Control.Concurrent.STM.TBMQueue      (TBMQueue, closeTBMQueue)
 import           Control.Exception.Safe               (bracket)
-import           Control.Logger.Simple                (LogConfig (LogConfig), logDebug, logError,
-                                                       withGlobalLogging)
-import           Control.Monad                        (foldM, forM, void)
+import           Control.Logger.Simple
+    (LogConfig(LogConfig), logError, withGlobalLogging)
+import           Control.Monad                        (void)
 import           Control.Monad.IO.Class               (MonadIO, liftIO)
 import           Control.Monad.STM                    (atomically)
-import           Data.Aeson                           (ToJSON, Value (Array), eitherDecodeStrict,
-                                                       object, (.=))
+import           Data.Aeson                           (ToJSON, Value(Array), object, (.=))
 import           Data.ByteString                      (ByteString)
 import qualified Data.ByteString                      as B
 import qualified Data.ByteString.Char8                as C
-import           Data.HVect                           (HVect ((:&:), HNil))
+import           Data.HVect                           (HVect((:&:), HNil))
 import qualified Data.IntMap                          as IntMap
 import           Data.Maybe                           (fromMaybe)
 import qualified Data.Text                            as T
@@ -44,16 +53,30 @@ import           Data.Text.Encoding                   (decodeUtf8)
 import qualified Data.Vector                          as V
 import           Debug.Trace                          (trace, traceShow)
 import           GitHub.Data.Webhooks.Secure          (isSecurePayload)
-import           Network.HTTP.Types.Status            (Status (Status), status401, status422)
+import           Network.HTTP.Types.Status            (Status(Status), status401, status422)
 import           Network.Wai                          (Application, Middleware)
 import qualified Network.Wai.Handler.Warp             as Warp
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import           Web.Spock                            (ActionCtxT, SpockActionCtx, SpockM, body,
-                                                       get, getContext, getState, header, json,
-                                                       post, prehook, rawHeader, root, setStatus,
-                                                       spock, spockAsApp)
-import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase), SpockCfg,
-                                                       defaultSpockCfg, spc_errorHandler)
+import           Web.Spock
+    ( ActionCtxT
+    , SpockActionCtx
+    , SpockM
+    , body
+    , get
+    , getContext
+    , getState
+    , header
+    , json
+    , post
+    , prehook
+    , rawHeader
+    , root
+    , setStatus
+    , spock
+    , spockAsApp
+    )
+import           Web.Spock.Config
+    (PoolOrConn(PCNoDatabase), SpockCfg, defaultSpockCfg, spc_errorHandler)
 
 
 data SignedRequest = SignedRequest
@@ -145,10 +168,10 @@ handleCh = do
 
 
 --------------------------------------------------------------------------------
-xo :: FilePath -> IO ()
+xo :: FilePath -> IO (Either String Value)
 xo fname = do
   input <- B.readFile fname
-  print $ convertBodyToEvent input
+  pure $ convertBodyToEvent input
 
 
 --------------------------------------------------------------------------------
@@ -196,32 +219,20 @@ convertBodyToEvent input =
 defineActionChanges :: IntMap.IntMap T.Text -> ClubhouseAction -> Value
 defineActionChanges references action = do
   let na = traceShow action ("N/A" :: T.Text)
-  let prevState = Nothing -- chOldState <$> chActionWorkflowState action
-  let currentState = Nothing -- chNewState <$> chActionWorkflowState action
-  let matched = IntMap.filterWithKey (\key _ -> key == fromMaybe 0 currentState) references
-  object
-    [ "name" .= fromMaybe na (chActionName action)
-    , "id" .= chActionId action
-    , "new_state" .= maybe (Just na) (`IntMap.lookup` references) currentState
-    , "old_state" .= maybe (Just na) (`IntMap.lookup` references) prevState
-    ]
+  case chActionWorkflowState action of
+    (ClubhouseWorkflowCreated _workFlowId) -> undefined
+    (ClubhouseWorkflowChanged state) -> do
+      let newId = getWorkFlowId (chNewState $ state)
+      let oldId = getWorkFlowId (chOldState $ state)
+      object
+        [ "title" .= fromMaybe na (chActionName action)
+        , "id" .= chActionId action
+        , "new_state" .= IntMap.lookup newId references
+        , "old_state" .= IntMap.lookup oldId references
+        ]
 
 
 --------------------------------------------------------------------------------
--- explore
---   :: (Show a, MonadIO m)
---   => IntMap.IntMap a -> [ClubhouseAction] -> ClubhouseAction -> m [ClubhouseAction]
--- explore references accum action = do
---   logDebug $ T.pack (show action)
---   let newStateM = chNewState <$> chActionWorkflowState action
---   -- let newState2 = (`IntMap.lookup` references) <$> undefined
---   let newState = (`IntMap.lookup` references) =<< newStateM
---   logDebug $ T.pack (show newState)
---   let matched = IntMap.filterWithKey (\key _ -> key == fromMaybe 0 newStateM) references
---   logDebug $ T.pack (show matched)
---   pure (accum ++ [action])
-
-
 mkChEventWithStories :: ByteString -> Either String ClubhouseEvent
 mkChEventWithStories bs = do
   stories <- filter isChaStory . chActions <$> decodeChEvent bs
@@ -230,11 +241,13 @@ mkChEventWithStories bs = do
     else Right $ ClubhouseEvent stories
 
 
+--------------------------------------------------------------------------------
 decodeChEventFilterStory :: ByteString -> Either String ClubhouseEvent
 decodeChEventFilterStory bs = do
   ClubhouseEvent . filter isChaStory . chActions <$> decodeChEvent bs
 
 
+--------------------------------------------------------------------------------
 isChaStory :: ClubhouseAction -> Bool
 isChaStory cha =
   case chActionEntityType cha of

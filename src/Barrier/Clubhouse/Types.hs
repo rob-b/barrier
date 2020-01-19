@@ -8,24 +8,35 @@
 
 module Barrier.Clubhouse.Types where
 
-import           Data.Aeson              (FromJSON, ToJSON, eitherDecodeStrict, genericToJSON,
-                                          parseJSON, toJSON, withObject, withText, (.:), (.:?))
-import           Data.Aeson.Casing       (aesonDrop, snakeCase)
-import           Data.ByteString         (ByteString)
-import qualified Data.ByteString.Char8   as C
-import           Data.IntMap             (IntMap)
-import qualified Data.IntMap             as IntMap
-import           Data.Monoid             ((<>))
-import           Data.Text               (Text)
-import qualified Data.Text               as T
-import           Debug.Trace
-import           GHC.Generics            (Generic)
+import           Data.Aeson
+    ( FromJSON
+    , ToJSON
+    , eitherDecodeStrict
+    , genericToJSON
+    , parseJSON
+    , toJSON
+    , withObject
+    , withText
+    , (.:)
+    , (.:?)
+    )
+import           Data.Aeson.Casing                (aesonDrop, snakeCase)
+import           Data.ByteString                  (ByteString)
+import qualified Data.ByteString.Char8            as C
+import           Data.IntMap                      (IntMap)
+import qualified Data.IntMap                      as IntMap
+import           Data.Monoid                      ((<>))
+import           Data.Text                        (Text)
+import qualified Data.Text                        as T
+import           GHC.Generics                     (Generic)
 
-import           Data.Aeson.BetterErrors (Parse, asIntegral, asText, key, keyMay, toAesonParser,
-                                          (<|>))
-import qualified Data.Aeson.BetterErrors as BetterErrors
-import           Data.Text.Encoding      (encodeUtf8)
-import           URI.ByteString          (Absolute, URIRef, parseURI, strictURIParserOptions)
+import           Data.Aeson.BetterErrors
+    (Parse, asIntegral, asText, key, keyMay, toAesonParser)
+import qualified Data.Aeson.BetterErrors          as BetterErrors
+import           Data.Aeson.BetterErrors.Internal (ErrorSpecifics(FromAeson), badSchema)
+import           Data.Text.Encoding               (encodeUtf8)
+import           URI.ByteString
+    (Absolute, URIRef, parseURI, strictURIParserOptions)
 
 
 --------------------------------------------------------------------------------
@@ -184,10 +195,14 @@ asClubhouseAction =
   ClubhouseAction <$> key "id" asIntegral <*> key "action" asText <*> key "entity_type" (BetterErrors.withText parseEntityType) <*> keyMay "name" asText <*> asWorkflowStateOptions
 
 
+--------------------------------------------------------------------------------
 asWorkflowStateOptions :: Parse e WorkflowStateOptions
-asWorkflowStateOptions =
-  (ClubhouseWorkflowChanged <$> key "changes" asClubhouseWorkflowState) <|>
-  (ClubhouseWorkflowCreated <$> key "workflow_state_id" asIntegral)
+asWorkflowStateOptions = do
+  action <- key "action" asText
+  case action of
+    "update" -> ClubhouseWorkflowChanged <$> key "changes" asClubhouseWorkflowState
+    "create" -> ClubhouseWorkflowCreated <$> key "workflow_state_id" asIntegral
+    _        -> badSchema (FromAeson $ "Invalid action value: " <> T.unpack action)
 
 
 --------------------------------------------------------------------------------
@@ -205,11 +220,15 @@ newtype WorkFlowId = WorkFlowId
   { getWorkFlowId :: Int
   } deriving (Generic, Show, Real, Num, Ord, Eq, Enum, Integral)
 
+
+--------------------------------------------------------------------------------
 data WorkflowStateOptions
   = ClubhouseWorkflowChanged ClubhouseWorkflowState
   | ClubhouseWorkflowCreated WorkFlowId
   deriving (Show, Generic)
 
+
+--------------------------------------------------------------------------------
 data ClubhouseWorkflowState = ClubhouseWorkflowState
   { chOldState :: WorkFlowId
   , chNewState :: WorkFlowId
