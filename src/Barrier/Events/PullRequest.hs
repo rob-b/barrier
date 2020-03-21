@@ -6,8 +6,9 @@
 
 module Barrier.Events.PullRequest where
 
+import           Barrier.Actions              (getStoryForLink, sequenceEithers)
 import           Barrier.Check                (extractClubhouseLinks, extractClubhouseLinks2)
-import           Barrier.Clubhouse            (getStory, mkClubhouseStoryUrl)
+import           Barrier.Clubhouse            (mkClubhouseStoryUrl)
 import           Barrier.Clubhouse.Types      (ClubhouseLink, Story, StoryError (StoryHttpError))
 import           Barrier.Config               (AppConfig, readish)
 import           Barrier.Events.Types         (WrappedHook (WrappedHookPullRequest),
@@ -15,13 +16,10 @@ import           Barrier.Events.Types         (WrappedHook (WrappedHookPullReque
 import           Barrier.GitHub               (addStoryLinkComment, getCommentsForPullRequest,
                                                setHasStoryStatus, setMissingStoryStatus)
 import           Barrier.ListUtils            (ordNub)
-import           Control.Error                (ExceptT, runExceptT)
+import           Control.Error                (runExceptT)
 import           Control.Logger.Simple        (logDebug)
 import           Control.Monad                (unless)
-import           Control.Monad.IO.Class       (MonadIO)
-import           Control.Monad.Reader         (runReaderT)
 import           Data.Aeson                   (Value, object, (.=))
-import           Data.Either                  (lefts)
 import           Data.Maybe                   (listToMaybe, maybeToList)
 import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
@@ -128,14 +126,6 @@ checkerAndUpdater config payload stories = do
       unless (any commentsOnly stories') (addStoryLinkComment config payload story')
 
 
---------------------------------------------------------------------------------
-sequenceEithers :: [Either a b] -> Either [a] [b]
-sequenceEithers xs =
-    case sequence xs of
-      Right values -> Right values
-      Left _       -> Left (lefts xs)
-
-
 data StorySource
   = RefSource
   | DescriptionSource
@@ -196,10 +186,3 @@ getStoriesOrDieTrying config hook = do
     convertToDescription = fmap (FoundStory DescriptionSource)
     convertToComment = fmap (FoundStory CommentSource)
     convertToRef = fmap (FoundStory RefSource)
-
-
-linkDebug :: (Show a, MonadIO m) => a -> m ()
-linkDebug link = logDebug ("Checking link: " <> T.pack (show link))
-
-getStoryForLink :: (MonadIO m) => AppConfig -> ClubhouseLink -> m (ExceptT StoryError IO Story)
-getStoryForLink config l = linkDebug l >> runReaderT (getStory l) config

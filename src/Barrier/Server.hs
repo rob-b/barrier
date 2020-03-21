@@ -14,8 +14,6 @@ import           Barrier.Clubhouse.Types
     ( ClubhouseAction
     , ClubhouseActionEntityType(ChaStory)
     , ClubhouseEvent(ClubhouseEvent)
-    , ClubhouseWorkflowState
-    , WorkFlowId
     , WorkflowStateOptions(ClubhouseWorkflowChanged, ClubhouseWorkflowCreated)
     , chActionEntityType
     , chActionId
@@ -45,7 +43,7 @@ import           Data.Aeson                           (ToJSON, Value(Array), obj
 import           Data.ByteString                      (ByteString)
 import qualified Data.ByteString                      as B
 import qualified Data.ByteString.Char8                as C
-import           Data.HVect                           (HVect ((:&:), HNil))
+import           Data.HVect                           (HVect((:&:), HNil))
 import qualified Data.IntMap                          as IntMap
 import           Data.Maybe                           (fromMaybe)
 import qualified Data.Text                            as T
@@ -53,16 +51,30 @@ import           Data.Text.Encoding                   (decodeUtf8)
 import qualified Data.Vector                          as V
 import           Debug.Trace                          (trace, traceShow)
 import           GitHub.Data.Webhooks.Secure          (isSecurePayload)
-import           Network.HTTP.Types.Status            (Status (Status), status401, status422)
+import           Network.HTTP.Types.Status            (Status(Status), status401, status422)
 import           Network.Wai                          (Application, Middleware)
 import qualified Network.Wai.Handler.Warp             as Warp
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import           Web.Spock                            (ActionCtxT, SpockActionCtx, SpockM, body,
-                                                       get, getContext, getState, header, json,
-                                                       post, prehook, rawHeader, root, setStatus,
-                                                       spock, spockAsApp)
-import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase), SpockCfg,
-                                                       defaultSpockCfg, spc_errorHandler)
+import           Web.Spock
+    ( ActionCtxT
+    , SpockActionCtx
+    , SpockM
+    , body
+    , get
+    , getContext
+    , getState
+    , header
+    , json
+    , post
+    , prehook
+    , rawHeader
+    , root
+    , setStatus
+    , spock
+    , spockAsApp
+    )
+import           Web.Spock.Config
+    (PoolOrConn(PCNoDatabase), SpockCfg, defaultSpockCfg, spc_errorHandler)
 
 
 data SignedRequest = SignedRequest
@@ -227,14 +239,7 @@ mkChEventWithStories bs = do
     else Right $ ClubhouseEvent stories
 
 
-mkChEventWithStories :: ByteString -> Either String ClubhouseEvent
-mkChEventWithStories bs = do
-  stories <- filter isChaStory . chActions <$> decodeChEvent bs
-  if null stories
-    then Left "Event has no actions where entity_type is \"story\""
-    else Right $ ClubhouseEvent stories
-
-
+--------------------------------------------------------------------------------
 decodeChEventFilterStory :: ByteString -> Either String ClubhouseEvent
 decodeChEventFilterStory bs = do
   ClubhouseEvent . filter isChaStory . chActions <$> decodeChEvent bs
