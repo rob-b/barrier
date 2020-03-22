@@ -35,7 +35,7 @@ import           Control.Concurrent.Async             (Async, async, wait)
 import           Control.Concurrent.STM.TBMQueue      (TBMQueue, closeTBMQueue)
 import           Control.Exception.Safe               (bracket)
 import           Control.Logger.Simple
-    (LogConfig(LogConfig), logError, withGlobalLogging)
+    (LogConfig(LogConfig), logError, logInfo, withGlobalLogging)
 import           Control.Monad                        (void)
 import           Control.Monad.IO.Class               (MonadIO, liftIO)
 import           Control.Monad.STM                    (atomically)
@@ -43,6 +43,7 @@ import           Data.Aeson                           (ToJSON, Value(Array), obj
 import           Data.ByteString                      (ByteString)
 import qualified Data.ByteString                      as B
 import qualified Data.ByteString.Char8                as C
+import           Data.EitherR                         (EitherR(EitherR), runEitherR)
 import           Data.HVect                           (HVect((:&:), HNil))
 import qualified Data.IntMap                          as IntMap
 import           Data.Maybe                           (fromMaybe)
@@ -156,13 +157,23 @@ handleA = do
 handleCh :: ApiAction a
 handleCh = do
   bodyContent <- body
-  case convertBodyToEvent bodyContent of
+  case runEitherR (other bodyContent) of
     Left err -> do
       logError (T.pack err)
       setStatus status422
       json (errorObject (422 :: Int) (C.pack err))
     Right thing -> do
+      logInfo (decodeUtf8 bodyContent)
       json thing
+
+
+---------------------------------------------------------------------------------
+other :: ByteString -> EitherR Value String
+other bs = do
+  failure <- EitherR $ convertBodyToEvent bs
+  if bs == "null"
+    then (EitherR (Right "Received \"null\" string"))
+    else (pure failure)
 
 
 --------------------------------------------------------------------------------
