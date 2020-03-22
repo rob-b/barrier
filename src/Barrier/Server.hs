@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -39,10 +38,11 @@ import           Control.Logger.Simple
 import           Control.Monad                        (void)
 import           Control.Monad.IO.Class               (MonadIO, liftIO)
 import           Control.Monad.STM                    (atomically)
-import           Data.Aeson                           (ToJSON, Value(Array), object, (.=))
+import           Data.Aeson                           (ToJSON, Value(Array), encode, object, (.=))
 import           Data.ByteString                      (ByteString)
 import qualified Data.ByteString                      as B
 import qualified Data.ByteString.Char8                as C
+import           Data.ByteString.Lazy                 (toStrict)
 import           Data.EitherR                         (EitherR(EitherR), runEitherR)
 import           Data.HVect                           (HVect((:&:), HNil))
 import qualified Data.IntMap                          as IntMap
@@ -157,30 +157,29 @@ handleA = do
 handleCh :: ApiAction a
 handleCh = do
   bodyContent <- body
-  case runEitherR (other bodyContent) of
+  case processClubhouseWebhook bodyContent of
     Left err -> do
       logError (T.pack err)
       setStatus status422
       json (errorObject (422 :: Int) (C.pack err))
     Right thing -> do
-      logInfo (decodeUtf8 bodyContent)
+      logInfo . decodeUtf8 . toStrict $ encode thing
       json thing
 
 
 ---------------------------------------------------------------------------------
-other :: ByteString -> EitherR Value String
-other bs = do
+processClubhouseWebhook :: ByteString -> Either String Value
+processClubhouseWebhook bs = runEitherR $ do
   failure <- EitherR $ convertBodyToEvent bs
   if bs == "null"
-    then (EitherR (Right "Received \"null\" string"))
-    else (pure failure)
+    then EitherR (Right (errorObject (200 :: Int) "Received \"null\" string"))
+    else pure failure
 
 
 --------------------------------------------------------------------------------
 xo :: FilePath -> IO (Either String Value)
 xo fname = do
-  input <- B.readFile fname
-  pure $ convertBodyToEvent input
+  convertBodyToEvent <$> B.readFile fname
 
 
 --------------------------------------------------------------------------------
@@ -231,8 +230,8 @@ defineActionChanges references action = do
   case chActionWorkflowState action of
     (ClubhouseWorkflowCreated _workFlowId) -> undefined
     (ClubhouseWorkflowChanged state) -> do
-      let newId = getWorkFlowId (chNewState $ state)
-      let oldId = getWorkFlowId (chOldState $ state)
+      let newId = getWorkFlowId (chNewState state)
+      let oldId = getWorkFlowId (chOldState state)
       object
         [ "title" .= fromMaybe na (chActionName action)
         , "id" .= chActionId action
