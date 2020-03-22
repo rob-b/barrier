@@ -5,7 +5,7 @@
 module Barrier.Events.Comment where
 
 
-import           Barrier.Actions              (getStoryForLink, sequenceEithers)
+import           Barrier.Actions              (getStoryForLink)
 import           Barrier.Check                (extractClubhouseLinks2)
 import           Barrier.Clubhouse.Types      (ClubhouseLink, Story, StoryError)
 import           Barrier.Config               (AppConfig)

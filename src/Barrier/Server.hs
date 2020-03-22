@@ -8,11 +8,12 @@
 module Barrier.Server
    where
 
-
 import           Barrier.Clubhouse.Types
     ( ClubhouseAction
     , ClubhouseActionEntityType(ChaStory)
     , ClubhouseEvent(ClubhouseEvent)
+    , EventParseError(EventParseError)
+    , ExpandedAction(ExpandedAction)
     , WorkflowStateOptions(ClubhouseWorkflowChanged, ClubhouseWorkflowCreated)
     , chActionEntityType
     , chActionId
@@ -38,7 +39,7 @@ import           Control.Logger.Simple
 import           Control.Monad                        (void)
 import           Control.Monad.IO.Class               (MonadIO, liftIO)
 import           Control.Monad.STM                    (atomically)
-import           Data.Aeson                           (ToJSON, Value(Array), encode, object, (.=))
+import           Data.Aeson                           (ToJSON, Value, encode, object, (.=))
 import           Data.ByteString                      (ByteString)
 import qualified Data.ByteString                      as B
 import qualified Data.ByteString.Char8                as C
@@ -49,6 +50,7 @@ import qualified Data.IntMap                          as IntMap
 import           Data.Maybe                           (fromMaybe)
 import qualified Data.Text                            as T
 import           Data.Text.Encoding                   (decodeUtf8)
+import           Data.Vector                          (Vector)
 import qualified Data.Vector                          as V
 import           Debug.Trace                          (trace, traceShow)
 import           GitHub.Data.Webhooks.Secure          (isSecurePayload)
@@ -159,50 +161,49 @@ handleCh = do
   bodyContent <- body
   case processClubhouseWebhook bodyContent of
     Left err -> do
-      logError (T.pack err)
+      logError (T.pack $ show err)
       setStatus status422
-      json (errorObject (422 :: Int) (C.pack err))
-    Right thing -> do
-      logInfo . decodeUtf8 . toStrict $ encode thing
-      json thing
+      json (errorObject (422 :: Int) (C.pack $ show err))
+    Right expandedActions -> do
+      logInfo . decodeUtf8 . toStrict $ encode expandedActions
+      json expandedActions
 
 
 ---------------------------------------------------------------------------------
-processClubhouseWebhook :: ByteString -> Either String Value
+processClubhouseWebhook :: ByteString -> Either EventParseError (Vector ExpandedAction)
 processClubhouseWebhook bs = runEitherR $ do
   failure <- EitherR $ convertBodyToEvent bs
-  if bs == "null"
-    then EitherR (Right (errorObject (200 :: Int) "Received \"null\" string"))
-    else pure failure
+  case bs of
+    "null" -> EitherR (Left $ EventParseError "Received \"null\" string!")
+    ""     -> EitherR (Left $ EventParseError "Received empty body")
+    _      -> pure failure
 
 
 --------------------------------------------------------------------------------
-xo :: FilePath -> IO (Either String Value)
+xo :: FilePath -> IO (Either EventParseError (Vector ExpandedAction))
 xo fname = do
   convertBodyToEvent <$> B.readFile fname
 
 
 --------------------------------------------------------------------------------
-expandActions :: ByteString -> [ClubhouseAction] -> Either String Value
+expandActions :: ByteString -> [ClubhouseAction] -> Either String (Vector ExpandedAction)
 expandActions _ [] = Left "Event did not include a story change"
 expandActions input actions = do
-  -- case (eitherDecodeStrict input :: Either String ClubhouseReferences) of
-  --   Left e     -> undefined
-  --   Right refs -> trace (show refs) undefined
   case decodeChReferences input of
     Left err -> Left err
     Right (references :: IntMap.IntMap T.Text) -> do
       let objects = combiner references actions
-      pure . Array $ V.fromList objects
+      pure $ V.fromList objects
 
 
-combiner :: (Foldable t) => IntMap.IntMap T.Text -> t ClubhouseAction -> [Value]
+--------------------------------------------------------------------------------
+combiner :: (Foldable t) => IntMap.IntMap T.Text -> t ClubhouseAction -> [ExpandedAction]
 combiner references actions =
   foldr (\action acc -> acc <> [defineActionChanges references action]) [] actions
 
 
 --------------------------------------------------------------------------------
-convertBodyToEvent :: ByteString -> Either String Value
+convertBodyToEvent :: ByteString -> Either EventParseError (Vector ExpandedAction)
 convertBodyToEvent input =
   -- the input is the encoded json of a clubhouse event. Try and extract a clubhouse event from
   -- this json but only when at least one of its actions have the entity_type of "story"
@@ -212,19 +213,19 @@ convertBodyToEvent input =
       output <- case chActions chEvent of
         -- we know that mkChEventWithStories should guarantee that the actions is not empty but
         -- that's not promised at the type level so we need to check still
-        [] -> Left "Event did not include a story change"
-        actions -> do
+        [] -> Left $ EventParseError "Event did not include a story change"
+        (actions :: [ClubhouseAction]) -> do
           case expandActions input actions of
             Left err -> do
               let reason = "Unable to parse references " ++ show err
-              Left reason
+              Left $ EventParseError reason
             Right expandedActions -> do
               pure expandedActions
       pure output
 
 
 --------------------------------------------------------------------------------
-defineActionChanges :: IntMap.IntMap T.Text -> ClubhouseAction -> Value
+defineActionChanges :: IntMap.IntMap T.Text -> ClubhouseAction -> ExpandedAction
 defineActionChanges references action = do
   let na = traceShow action ("N/A" :: T.Text)
   case chActionWorkflowState action of
@@ -232,27 +233,27 @@ defineActionChanges references action = do
     (ClubhouseWorkflowChanged state) -> do
       let newId = getWorkFlowId (chNewState state)
       let oldId = getWorkFlowId (chOldState state)
-      object
-        [ "title" .= fromMaybe na (chActionName action)
-        , "id" .= chActionId action
-        , "new_state" .= IntMap.lookup newId references
-        , "old_state" .= IntMap.lookup oldId references
-        ]
+      let title = fromMaybe na (chActionName action)
+      ExpandedAction
+        title
+        (chActionId action)
+        (IntMap.lookup newId references)
+        (IntMap.lookup oldId references)
 
 
 --------------------------------------------------------------------------------
-mkChEventWithStories :: ByteString -> Either String ClubhouseEvent
+mkChEventWithStories :: ByteString -> Either EventParseError ClubhouseEvent
 mkChEventWithStories bs = do
   stories <- filter isChaStory . chActions <$> decodeChEvent bs
   if null stories
-    then Left "Event has no actions where entity_type is \"story\""
+    then Left $ EventParseError "Event has no actions where entity_type is \"story\""
     else Right $ ClubhouseEvent stories
 
 
 --------------------------------------------------------------------------------
-decodeChEventFilterStory :: ByteString -> Either String ClubhouseEvent
-decodeChEventFilterStory bs = do
-  ClubhouseEvent . filter isChaStory . chActions <$> decodeChEvent bs
+-- decodeChEventFilterStory :: ByteString -> Either EventParseError ClubhouseEvent
+-- decodeChEventFilterStory bs = do
+--   ClubhouseEvent . filter isChaStory . chActions <$> decodeChEvent bs
 
 
 --------------------------------------------------------------------------------

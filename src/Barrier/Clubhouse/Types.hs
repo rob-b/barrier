@@ -40,6 +40,20 @@ import           URI.ByteString
 
 
 --------------------------------------------------------------------------------
+data ExpandedAction = ExpandedAction
+  { jarTitle    :: T.Text
+  , jarId       :: Int
+  , jarOldState :: Maybe T.Text
+  , jarNewState :: Maybe T.Text
+  } deriving (Show, Generic)
+
+
+--------------------------------------------------------------------------------
+instance ToJSON ExpandedAction where
+  toJSON = genericToJSON $ aesonDrop 3 snakeCase
+
+
+--------------------------------------------------------------------------------
 newtype ClubhouseLink = ClubhouseLink
   { unClubhouseLink :: URIRef Absolute
   } deriving (Eq, Show)
@@ -145,12 +159,21 @@ newtype ClubhouseEvent = ClubhouseEvent
 
 --------------------------------------------------------------------------------
 instance FromJSON ClubhouseEvent where
-  parseJSON = BetterErrors.toAesonParser' asClubhouseEvent
+  parseJSON = BetterErrors.toAesonParser clubhouseEventErrorToString asClubhouseEvent
+    where clubhouseEventErrorToString _ = "Received \"null\" value"
 
 
 --------------------------------------------------------------------------------
-asClubhouseEvent :: Parse e ClubhouseEvent
-asClubhouseEvent = ClubhouseEvent <$> key "actions" (BetterErrors.eachInArray asClubhouseAction)
+data ClubhouseEventError = NullValue deriving Show
+
+
+--------------------------------------------------------------------------------
+asClubhouseEvent :: Parse ClubhouseEventError ClubhouseEvent
+asClubhouseEvent = do
+  let parser = ClubhouseEvent <$> key "actions" (BetterErrors.eachInArray asClubhouseAction)
+  BetterErrors.perhaps parser >>= \case
+    Nothing -> badSchema $ BetterErrors.CustomError NullValue
+    Just v  -> pure v
 
 
 --------------------------------------------------------------------------------
@@ -264,7 +287,7 @@ asClubhouseWorkflowState =
 
 
 --------------------------------------------------------------------------------
-readEvent :: IO (Either String ClubhouseEvent)
+readEvent :: IO (Either EventParseError ClubhouseEvent)
 readEvent = do
   let jsonData = C.readFile "clubhouse-event.json"
   decodeChEvent <$> jsonData
@@ -276,9 +299,17 @@ readReferences = do
   decodeChReferences <$> C.readFile "clubhouse-event.json"
 
 
+newtype EventParseError =
+  EventParseError String
+  deriving (Show)
+
+
 --------------------------------------------------------------------------------
-decodeChEvent :: ByteString -> Either String ClubhouseEvent
-decodeChEvent = eitherDecodeStrict
+decodeChEvent :: ByteString -> Either EventParseError ClubhouseEvent
+decodeChEvent bs =
+  case eitherDecodeStrict bs of
+    Left err    -> Left $ EventParseError err
+    Right event -> Right event
 
 
 --------------------------------------------------------------------------------
