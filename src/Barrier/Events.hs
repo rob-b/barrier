@@ -30,8 +30,9 @@ supportedEvents = [WebhookIssueCommentEvent, WebhookPullRequestEvent]
 -- | Given the value of the X-Github-Event header and the request body, select the appropriate
 -- event type
 selectEventType :: ByteString -> ByteString -> Maybe WrappedEvent
-selectEventType eventHeader =
-  decodeEventType (listToMaybe $ mapMaybe (`matchEvent` eventHeader) supportedEvents)
+selectEventType eventHeader = do
+  let events = mapMaybe (`matchEvent` eventHeader) supportedEvents
+  decodeEventType $ listToMaybe events
 
 
 --------------------------------------------------------------------------------
