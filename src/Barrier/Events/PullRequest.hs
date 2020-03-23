@@ -9,12 +9,12 @@ module Barrier.Events.PullRequest where
 import           Barrier.Actions              (getStoryForLink, sequenceEithers)
 import           Barrier.Check                (extractClubhouseLinks, extractClubhouseLinks2)
 import           Barrier.Clubhouse            (mkClubhouseStoryUrl)
-import           Barrier.Clubhouse.Types      (ClubhouseLink, Story, StoryError (StoryHttpError))
+import           Barrier.Clubhouse.Types      (ClubhouseLink, Story, StoryError(StoryHttpError))
 import           Barrier.Config               (AppConfig, readish)
-import           Barrier.Events.Types         (WrappedHook (WrappedHookPullRequest),
-                                               unWrapHookPullRequest)
-import           Barrier.GitHub               (addStoryLinkComment, getCommentsForPullRequest,
-                                               setHasStoryStatus, setMissingStoryStatus)
+import           Barrier.Events.Types
+    (WrappedHook(WrappedHookPullRequest), unWrapHookPullRequest)
+import           Barrier.GitHub
+    (addStoryLinkComment, getCommentsForPullRequest, setHasStoryStatus, setMissingStoryStatus)
 import           Barrier.ListUtils            (ordNub)
 import           Control.Error                (runExceptT)
 import           Control.Logger.Simple        (logDebug)
@@ -26,10 +26,14 @@ import           Data.Text                    (Text)
 import qualified Data.Text                    as T
 import qualified Data.Vector                  as V
 import           GitHub.Data.Issues           (IssueComment, issueCommentBody)
-import           GitHub.Data.Webhooks.Events  (PullRequestEvent, PullRequestEventAction (PullRequestActionOther, PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
-                                               evPullReqAction, evPullReqPayload)
-import           GitHub.Data.Webhooks.Payload (HookPullRequest, getUrl, whPullReqHead,
-                                               whPullReqHtmlUrl, whPullReqTargetRef)
+import           GitHub.Data.Webhooks.Events
+    ( PullRequestEvent
+    , PullRequestEventAction(PullRequestActionOther, PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction)
+    , evPullReqAction
+    , evPullReqPayload
+    )
+import           GitHub.Data.Webhooks.Payload
+    (HookPullRequest, getUrl, whPullReqHead, whPullReqHtmlUrl, whPullReqTargetRef)
 import           Text.Regex.PCRE.Heavy        (re, scan)
 
 

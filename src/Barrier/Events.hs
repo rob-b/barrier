@@ -7,7 +7,8 @@ module Barrier.Events where
 import           Barrier.Config               (AppConfig)
 import           Barrier.Events.Comment       (handleCommentEvent, handleIssueCommentEventAction)
 import           Barrier.Events.PullRequest   (handlePullRequestAction, handlePullRequestEvent)
-import           Barrier.Events.Types         (WrappedEvent (WrappedIssueComment, WrappedPullRequest))
+import           Barrier.Events.Types
+    (WrappedEvent(WrappedIssueComment, WrappedPullRequest))
 import           Data.Aeson                   (ToJSON, Value, decodeStrict, encode)
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
@@ -15,9 +16,10 @@ import           Data.ByteString.Lazy         (toStrict)
 import           Data.Maybe                   (fromMaybe, listToMaybe, mapMaybe)
 import           Data.Monoid                  ((<>))
 import qualified GitHub.Data.PullRequests     as GitHub
-import           GitHub.Data.Webhooks         (RepoWebhookEvent (WebhookIssueCommentEvent, WebhookPullRequestEvent))
-import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, PullRequestEvent,
-                                               evPullReqPayload)
+import           GitHub.Data.Webhooks
+    (RepoWebhookEvent(WebhookIssueCommentEvent, WebhookPullRequestEvent))
+import           GitHub.Data.Webhooks.Events
+    (IssueCommentEvent, PullRequestEvent, evPullReqPayload)
 import           GitHub.Data.Webhooks.Payload (HookPullRequest)
 
 
