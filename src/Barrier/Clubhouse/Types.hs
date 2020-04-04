@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -20,6 +21,10 @@ import           Data.Aeson
     , (.:)
     , (.:?)
     )
+import           Data.Aeson.BetterErrors
+    (Parse, asIntegral, asText, key, keyMay, toAesonParser)
+import qualified Data.Aeson.BetterErrors          as BetterErrors
+import           Data.Aeson.BetterErrors.Internal (ErrorSpecifics(FromAeson), badSchema)
 import           Data.Aeson.Casing                (aesonDrop, snakeCase)
 import           Data.ByteString                  (ByteString)
 import qualified Data.ByteString.Char8            as C
@@ -28,23 +33,18 @@ import qualified Data.IntMap                      as IntMap
 import           Data.Monoid                      ((<>))
 import           Data.Text                        (Text)
 import qualified Data.Text                        as T
-import           GHC.Generics                     (Generic)
-
-import           Data.Aeson.BetterErrors
-    (Parse, asIntegral, asText, key, keyMay, toAesonParser)
-import qualified Data.Aeson.BetterErrors          as BetterErrors
-import           Data.Aeson.BetterErrors.Internal (ErrorSpecifics(FromAeson), badSchema)
 import           Data.Text.Encoding               (encodeUtf8)
+import           GHC.Generics                     (Generic)
 import           URI.ByteString
     (Absolute, URIRef, parseURI, strictURIParserOptions)
 
 
 --------------------------------------------------------------------------------
 data ExpandedAction = ExpandedAction
-  { jarTitle    :: T.Text
-  , jarId       :: Int
-  , jarOldState :: Maybe T.Text
-  , jarNewState :: Maybe T.Text
+  { title    :: T.Text
+  , id       :: Int
+  , oldState :: Maybe T.Text
+  , newState :: Maybe T.Text
   } deriving (Show, Generic)
 
 

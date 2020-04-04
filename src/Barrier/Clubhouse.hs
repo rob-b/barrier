@@ -5,14 +5,18 @@
 
 module Barrier.Clubhouse where
 
-import           Barrier.Clubhouse.Types (ClubhouseLink (ClubhouseLink), Story, StoryError (StoryHttpError, StoryNotFoundError, StoryParseError))
+import           Barrier.Clubhouse.Types
+    ( ClubhouseLink(ClubhouseLink)
+    , Story
+    , StoryError(StoryHttpError, StoryNotFoundError, StoryParseError)
+    )
 import           Barrier.Config          (AppConfig, configClubhouseToken, mkAppConfig, readish)
 import           Control.Error           (runExceptT, throwE)
 import           Control.Exception       (SomeException)
 import           Control.Exception.Safe  (Exception, MonadCatch, fromException, tryJust)
 import           Control.Logger.Simple   (logDebug)
 import           Control.Monad           (void)
-import           Control.Monad.Except    (ExceptT (ExceptT), mapExceptT)
+import           Control.Monad.Except    (ExceptT(ExceptT), mapExceptT)
 import           Control.Monad.Reader    (MonadReader, ask, runReaderT)
 import           Data.Aeson              (eitherDecode)
 import           Data.ByteString         (ByteString)
@@ -22,20 +26,41 @@ import           Data.ByteString.Lazy    (toStrict)
 import           Data.Monoid             ((<>))
 import           Data.Text.Encoding      (decodeUtf8)
 import           Lens.Micro.Platform     ((^.))
-import           Network.Connection      (TLSSettings (TLSSettingsSimple),
-                                          settingDisableCertificateValidation,
-                                          settingDisableSession, settingUseServerName)
+import           Network.Connection
+    ( TLSSettings(TLSSettingsSimple)
+    , settingDisableCertificateValidation
+    , settingDisableSession
+    , settingUseServerName
+    )
 import qualified Network.HTTP.Client     as Client
 import           Network.HTTP.Client.TLS (mkManagerSettings)
-import           Network.HTTP.Req        (GET (GET), HttpConfig,
-                                          HttpException (VanillaHttpException), LbsResponse,
-                                          NoReqBody (NoReqBody), defaultHttpConfig,
-                                          httpConfigAltManager, httpConfigCheckResponse,
-                                          lbsResponse, parseUrlHttps, req, responseBody,
-                                          responseStatusCode, runReq, (=:))
+import           Network.HTTP.Req
+    ( GET(GET)
+    , HttpConfig
+    , HttpException(VanillaHttpException)
+    , LbsResponse
+    , NoReqBody(NoReqBody)
+    , defaultHttpConfig
+    , httpConfigAltManager
+    , httpConfigCheckResponse
+    , lbsResponse
+    , parseUrlHttps
+    , req
+    , responseBody
+    , responseStatusCode
+    , runReq
+    , (=:)
+    )
 import           Network.HTTP.Types      (statusCode)
-import           URI.ByteString          (Absolute, URIParseError (OtherError), URIRef, parseURI,
-                                          pathL, serializeURIRef', strictURIParserOptions)
+import           URI.ByteString
+    ( Absolute
+    , URIParseError(OtherError)
+    , URIRef
+    , parseURI
+    , pathL
+    , serializeURIRef'
+    , strictURIParserOptions
+    )
 
 
 --------------------------------------------------------------------------------
