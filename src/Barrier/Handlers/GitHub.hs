@@ -9,12 +9,12 @@ import           Barrier.Events.Comment       (handleCommentEvent, handleIssueCo
 import           Barrier.Events.PullRequest   (handlePullRequestAction, handlePullRequestEvent)
 import           Barrier.Events.Types
     (WrappedEvent(WrappedIssueComment, WrappedPullRequest))
-import           Data.Aeson                   (ToJSON, Value, decodeStrict, encode)
+import           Data.Aeson                   (Value(String), decode, decodeStrict, encode)
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
-import           Data.ByteString.Lazy         (toStrict)
-import           Data.Maybe                   (fromMaybe, listToMaybe, mapMaybe)
+import           Data.Maybe                   (fromMaybe)
 import           Data.Monoid                  ((<>))
+import           Data.Text.Encoding           (decodeUtf8)
 import qualified GitHub.Data.PullRequests     as GitHub
 import           GitHub.Data.Webhooks
     (RepoWebhookEvent(WebhookIssueCommentEvent, WebhookPullRequestEvent))
@@ -22,29 +22,37 @@ import           GitHub.Data.Webhooks.Events
     (IssueCommentEvent, PullRequestEvent, evPullReqPayload)
 import           GitHub.Data.Webhooks.Payload (HookPullRequest)
 
+newtype EventHeader = EventHeader { unEventHeader :: ByteString }
+newtype EventBody = EventBody { unEventBody :: ByteString }
+
 
 --------------------------------------------------------------------------------
-supportedEvents :: [RepoWebhookEvent]
-supportedEvents = [WebhookIssueCommentEvent, WebhookPullRequestEvent]
+-- Given the X-GitHub-Event header and the body of a github webhook select an action to run
+getActionFromEvent :: EventHeader -> EventBody -> Maybe (AppConfig -> IO())
+getActionFromEvent header body = selectEventType header body >>= selectAction
 
 
 --------------------------------------------------------------------------------
 -- | Given the value of the X-Github-Event header and the request body, select the appropriate
 -- event type
-selectEventType :: ByteString -> ByteString -> Maybe WrappedEvent
-selectEventType eventHeader = do
-  let events = mapMaybe (`matchEvent` eventHeader) supportedEvents
-  decodeEventType $ listToMaybe events
+selectEventType :: EventHeader -> EventBody -> Maybe WrappedEvent
+selectEventType eventHeader eventBody =
+  eventFromHeaderValue eventHeader >>= (`decodeEventType` eventBody)
 
 
 --------------------------------------------------------------------------------
--- | Given a RepoWebhookEvent and the bytestring value of X-Github-Event compare the bytestring
--- with the json encoded version of the RepoWebhookEvent to see if they are the same
-matchEvent :: ToJSON a => a -> ByteString -> Maybe a
-matchEvent event eventLabel
-  | toStrict( encode event) == name' = Just event
-  | otherwise = Nothing
-  where name' = "\"" <> eventLabel <> "\""
+eventFromHeaderValue :: EventHeader -> Maybe RepoWebhookEvent
+eventFromHeaderValue (EventHeader header) = case decode . encode . String . decodeUtf8 $ header of
+  a@(Just WebhookPullRequestEvent)  -> a
+  a@(Just WebhookIssueCommentEvent) -> a
+  _                                 -> Nothing
+
+
+--------------------------------------------------------------------------------
+decodeEventType :: RepoWebhookEvent -> EventBody -> Maybe WrappedEvent
+decodeEventType WebhookPullRequestEvent (EventBody bs)  = WrappedPullRequest <$> decodeStrict bs
+decodeEventType WebhookIssueCommentEvent (EventBody bs) = WrappedIssueComment <$> decodeStrict bs
+decodeEventType _ _                                     = Nothing
 
 
 --------------------------------------------------------------------------------
@@ -52,13 +60,6 @@ matchEvent event eventLabel
 selectResponse :: WrappedEvent -> Value
 selectResponse (WrappedIssueComment issue) = handleCommentEvent issue
 selectResponse (WrappedPullRequest pr)     = handlePullRequestEvent pr
-
-
---------------------------------------------------------------------------------
-decodeEventType :: Maybe RepoWebhookEvent -> ByteString -> Maybe WrappedEvent
-decodeEventType (Just WebhookPullRequestEvent) bs = WrappedPullRequest <$> (decodeStrict bs :: Maybe PullRequestEvent)
-decodeEventType (Just WebhookIssueCommentEvent) bs = WrappedIssueComment <$> (decodeStrict bs :: Maybe IssueCommentEvent)
-decodeEventType _ _ = Nothing
 
 
 --------------------------------------------------------------------------------

@@ -11,7 +11,12 @@ import           Barrier.Config
     (AppConfig, configGitHubSecret, lookupEnv, mkAppConfig)
 import           Barrier.Handlers.Clubhouse           (processClubhouseWebhook)
 import           Barrier.Handlers.GitHub
-    (selectAction, selectEventType, selectResponse)
+    ( EventBody(EventBody)
+    , EventHeader(EventHeader)
+    , selectAction
+    , selectEventType
+    , selectResponse
+    )
 import qualified Barrier.Queue                        as Q
 import           Control.Concurrent.Async             (Async, async, wait)
 import           Control.Concurrent.STM.TBMQueue      (TBMQueue, closeTBMQueue)
@@ -151,7 +156,7 @@ handleGithub :: AuthedApiAction (HVect (SignedRequest ': xs)) a
 handleGithub = do
   bs <- body
   eventHeader <- rawHeader "X-Github-Event"
-  let eventType = flip selectEventType bs =<< eventHeader
+  let eventType = flip selectEventType (EventBody bs) =<< (EventHeader <$> eventHeader)
   case eventType of
     Nothing -> do
       setStatus status422
