@@ -9,6 +9,7 @@ import           Barrier.Actions              (getStoryForLink)
 import           Barrier.Check                (extractClubhouseLinks2)
 import           Barrier.Clubhouse.Types      (ClubhouseLink, Story, StoryError)
 import           Barrier.Config               (AppConfig)
+import           Barrier.Events               (noop)
 import           Control.Error                (ExceptT, runExceptT)
 import           Control.Logger.Simple        (logDebug)
 import           Control.Monad.IO.Class       (MonadIO)
@@ -18,12 +19,22 @@ import           Data.Monoid                  ((<>))
 import qualified Data.Text                    as T
 import           Data.Text.Encoding           (encodeUtf8)
 import qualified Data.Vector                  as V
-import           GitHub.Data.Id               (Id (Id))
-import           GitHub.Data.Webhooks.Events  (IssueCommentEvent, IssueCommentEventAction (IssueCommentCreatedAction, IssueCommentEditedAction),
-                                               evIssueCommentAction, evIssueCommentPayload)
-import           GitHub.Data.Webhooks.Payload (HookIssueComment, URL, getUrl, whIssueCommentBody,
-                                               whIssueCommentHtmlUrl, whIssueCommentUser,
-                                               whUserLogin)
+import           GitHub.Data.Id               (Id(Id))
+import           GitHub.Data.Webhooks.Events
+    ( IssueCommentEvent
+    , IssueCommentEventAction(IssueCommentCreatedAction, IssueCommentEditedAction)
+    , evIssueCommentAction
+    , evIssueCommentPayload
+    )
+import           GitHub.Data.Webhooks.Payload
+    ( HookIssueComment
+    , URL
+    , getUrl
+    , whIssueCommentBody
+    , whIssueCommentHtmlUrl
+    , whIssueCommentUser
+    , whUserLogin
+    )
 import           URI.ByteString               (parseURI, strictURIParserOptions, uriPath)
 
 
@@ -34,12 +45,15 @@ handleCommentEvent event =
   in  object ["data" .= inner]
 
 
-handleIssueCommentEventAction :: IssueCommentEvent -> Maybe (AppConfig -> IO ())
+handleIssueCommentEventAction :: IssueCommentEvent -> (AppConfig -> IO ())
 handleIssueCommentEventAction issueEvent = do
-  issue <- getIssueFromEvent issueEvent
-  if whUserLogin (whIssueCommentUser issue) == "robozd"
-    then Nothing
-    else Just $ doThingForComment issue
+  maybe noop action $ getIssueFromEvent issueEvent
+  where
+    action :: HookIssueComment -> (AppConfig -> IO ())
+    action issue =
+      if whUserLogin (whIssueCommentUser issue) == "robozd"
+        then noop
+        else doThingForComment issue
 
 
 getIssueFromEvent :: IssueCommentEvent -> Maybe HookIssueComment

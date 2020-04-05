@@ -1,8 +1,9 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Barrier.Server
    where
@@ -13,6 +14,7 @@ import           Barrier.Handlers.Clubhouse           (processClubhouseWebhook)
 import           Barrier.Handlers.GitHub
     ( EventBody(EventBody)
     , EventHeader(EventHeader)
+    , UnsupportedEvent(UnsupportedEvent)
     , selectAction
     , selectEventType
     , selectResponse
@@ -155,22 +157,26 @@ handleClubhouse = do
 handleGithub :: AuthedApiAction (HVect (SignedRequest ': xs)) a
 handleGithub = do
   bs <- body
-  eventHeader <- rawHeader "X-Github-Event"
-  let eventType = flip selectEventType (EventBody bs) =<< (EventHeader <$> eventHeader)
-  case eventType of
+  (eventHeader :: Maybe ByteString) <- rawHeader "X-Github-Event"
+  case eventHeader of
     Nothing -> do
       setStatus status422
-      let reason = errorObject (422 :: Int) "Unsupported event"
+      let reason = errorObject (422 :: Int) "Missing event header."
+      logInfo "Unsupported event"
       json reason
-    Just wrappedEvent -> do
-      case selectAction wrappedEvent of
-        Nothing -> pure ()
-        Just action -> do
+    Just eventHeader' -> do
+      case selectEventType (EventHeader eventHeader') (EventBody bs) of
+        Left (UnsupportedEvent err) -> do
+          setStatus status422
+          let reason = errorObject (422 :: Int) err
+          logInfo "Unsupported event"
+          json reason
+        Right wrappedEvent -> do
+          let action = selectAction wrappedEvent
           queue <- appStateQueue <$> getState
           config <- appStateConfig <$> getState
           _ <- trace "queing action" (liftIO $ Q.add queue (void $ action config))
-          pure ()
-      json (selectResponse wrappedEvent)
+          json (selectResponse wrappedEvent)
 
 
 --------------------------------------------------------------------------------

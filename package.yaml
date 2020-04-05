@@ -61,7 +61,7 @@ library:
   - containers
   - aeson-casing
   - aeson-better-errors
-  - generic-lens
+  - string-conversions
 
 executables:
   barrier:

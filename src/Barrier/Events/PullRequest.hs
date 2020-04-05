@@ -11,6 +11,7 @@ import           Barrier.Check                (extractClubhouseLinks, extractClu
 import           Barrier.Clubhouse            (mkClubhouseStoryUrl)
 import           Barrier.Clubhouse.Types      (ClubhouseLink, Story, StoryError(StoryHttpError))
 import           Barrier.Config               (AppConfig, readish)
+import           Barrier.Events               (noop)
 import           Barrier.Events.Types
     (WrappedHook(WrappedHookPullRequest), unWrapHookPullRequest)
 import           Barrier.GitHub
@@ -59,8 +60,8 @@ handlePullRequestEvent event =
 
 --------------------------------------------------------------------------------
 -- | Select the appropriate action to perform on an incoming PullRequestEvent
-handlePullRequestAction :: PullRequestEvent -> Maybe (AppConfig -> IO ())
-handlePullRequestAction pr = setPullRequestStatus <$> getPullRequestFromEvent pr
+handlePullRequestAction :: PullRequestEvent -> AppConfig -> IO ()
+handlePullRequestAction pr = maybe noop setPullRequestStatus (getPullRequestFromEvent pr)
 
 
 --------------------------------------------------------------------------------
