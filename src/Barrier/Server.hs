@@ -168,8 +168,9 @@ handleGithub = do
       case selectEventType (EventHeader eventHeader') (EventBody bs) of
         Left (UnsupportedEvent err) -> do
           setStatus status422
-          let reason = errorObject (422 :: Int) err
-          logInfo "Unsupported event"
+          let msg = "Unsupported event: " <> err
+          let reason = errorObject (422 :: Int) msg
+          logInfo $ decodeUtf8 msg
           json reason
         Right wrappedEvent -> do
           let action = selectAction wrappedEvent
