@@ -224,4 +224,5 @@ mkApp appState = do
 runApp :: Warp.Port -> Application -> IO ()
 runApp port application = do
   let settings = Warp.setPort port Warp.defaultSettings
+  _ <- logInfo . T.pack $ "Starting app on port " <> show port
   Warp.runSettings settings application

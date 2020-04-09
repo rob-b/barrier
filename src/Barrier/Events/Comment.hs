@@ -7,14 +7,16 @@ module Barrier.Events.Comment where
 
 import           Barrier.Actions              (getStoryForLink)
 import           Barrier.Check                (extractClubhouseLinks2)
-import           Barrier.Clubhouse.Types      (ClubhouseLink, Story, StoryError)
+import           Barrier.Clubhouse.Types      (ClubhouseLink, Story(Story), StoryError)
 import           Barrier.Config               (AppConfig)
 import           Barrier.Events               (noop)
 import           Control.Error                (ExceptT, runExceptT)
 import           Control.Logger.Simple        (logDebug)
+import           Control.Monad                (when)
 import           Control.Monad.IO.Class       (MonadIO)
 import           Data.Aeson                   (Value, object, (.=))
 import qualified Data.ByteString.Char8        as C
+import           Data.Either                  (rights)
 import           Data.Monoid                  ((<>))
 import qualified Data.Text                    as T
 import           Data.Text.Encoding           (encodeUtf8)
@@ -70,18 +72,16 @@ getIssueCommentFromEvent _ = Nothing
 doThingForComment :: a -> HookIssueComment -> AppConfig -> IO ()
 doThingForComment _issue comment config = do
   let allLinks = extractClubhouseLinks2 (whIssueCommentBody comment)
-  if null allLinks
-    then do
-      _ <- logDebug ("No links found in this comment " <> getUrl (whIssueCommentHtmlUrl comment))
-      pure ()
-    else do
-      let
-        msg = "At this point we should do something for these links"
-          ++ show allLinks
-      s <- mapM (getStoryForLink config) allLinks
-      commentStories <- traverse runExceptT s
-      _ <- logDebug $ T.pack msg
-      pure ()
+  stories <- mapM (getStoryForLink config) allLinks
+  (commentStories :: [Either StoryError Story]) <- traverse runExceptT stories
+  when
+    (null (rights commentStories))
+    (logDebug ("No links found in this comment " <> getUrl (whIssueCommentHtmlUrl comment)))
+  _ <- mapM_ xo commentStories
+  pure ()
+    where
+      xo (Left a)                    = logDebug $ "No story found: " <> T.pack (show a)
+      xo (Right (Story _ _ sName _)) = logDebug $ "Found: " <> sName
 
 
 fn ::
