@@ -174,6 +174,7 @@ handleGithub = do
           json reason
         Right wrappedEvent -> do
           let action = selectAction wrappedEvent
+          logInfo $ decodeUtf8 eventHeader'
           queue <- appStateQueue <$> getState
           config <- appStateConfig <$> getState
           _ <- trace "queing action" (liftIO $ Q.add queue (void $ action config))

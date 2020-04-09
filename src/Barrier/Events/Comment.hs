@@ -24,6 +24,7 @@ import           GitHub.Data.Webhooks.Events
     ( IssueCommentEvent
     , IssueCommentEventAction(IssueCommentCreatedAction, IssueCommentEditedAction)
     , evIssueCommentAction
+    , evIssueCommentIssue
     , evIssueCommentPayload
     )
 import           GitHub.Data.Webhooks.Payload
@@ -47,29 +48,31 @@ handleCommentEvent event =
 
 handleIssueCommentEventAction :: IssueCommentEvent -> (AppConfig -> IO ())
 handleIssueCommentEventAction issueEvent = do
-  maybe noop action $ getIssueFromEvent issueEvent
+  maybe noop action $ getIssueCommentFromEvent issueEvent
   where
     action :: HookIssueComment -> (AppConfig -> IO ())
-    action issue =
-      if whUserLogin (whIssueCommentUser issue) == "robozd"
+    action comment =
+      if whUserLogin (whIssueCommentUser comment) == "robozd"
         then noop
-        else doThingForComment issue
+        else doThingForComment (evIssueCommentIssue issueEvent) comment
+
+-- whIssueUrl $ evIssueCommentIssue issueCommentEvent
 
 
-getIssueFromEvent :: IssueCommentEvent -> Maybe HookIssueComment
-getIssueFromEvent issue@(evIssueCommentAction -> IssueCommentCreatedAction) =
+getIssueCommentFromEvent :: IssueCommentEvent -> Maybe HookIssueComment
+getIssueCommentFromEvent issue@(evIssueCommentAction -> IssueCommentCreatedAction) =
   Just $ evIssueCommentPayload issue
-getIssueFromEvent issue@(evIssueCommentAction -> IssueCommentEditedAction) =
+getIssueCommentFromEvent issue@(evIssueCommentAction -> IssueCommentEditedAction) =
   Just $ evIssueCommentPayload issue
-getIssueFromEvent _ = Nothing
+getIssueCommentFromEvent _ = Nothing
 
 
-doThingForComment :: HookIssueComment -> AppConfig -> IO ()
-doThingForComment hook config = do
-  let allLinks = extractClubhouseLinks2 (whIssueCommentBody hook)
+doThingForComment :: a -> HookIssueComment -> AppConfig -> IO ()
+doThingForComment _issue comment config = do
+  let allLinks = extractClubhouseLinks2 (whIssueCommentBody comment)
   if null allLinks
     then logDebug
-      ("No links found in this comment " <> getUrl (whIssueCommentHtmlUrl hook))
+      ("No links found in this comment " <> getUrl (whIssueCommentHtmlUrl comment))
     else do
       let
         msg = "At this point we should do something for these links"

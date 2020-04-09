@@ -23,3 +23,11 @@ comment <- issueCommentEventFromFixture
 whUserLogin $ whIssueCommentUser xo
 (Just wrappedHook) = (getWrappedHookFromIssue =<< comment)
 ```
+
+
+```
+(Just issueCommentEvent) <- issueCommentEventFromFixture
+(Just hookIssueComment) = getIssueFromEvent issueCommentEvent
+(Just config) <- mkAppConfig
+doThingForComment hookIssueComment config
+```
