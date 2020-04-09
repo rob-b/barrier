@@ -71,15 +71,17 @@ doThingForComment :: a -> HookIssueComment -> AppConfig -> IO ()
 doThingForComment _issue comment config = do
   let allLinks = extractClubhouseLinks2 (whIssueCommentBody comment)
   if null allLinks
-    then logDebug
-      ("No links found in this comment " <> getUrl (whIssueCommentHtmlUrl comment))
+    then do
+      _ <- logDebug ("No links found in this comment " <> getUrl (whIssueCommentHtmlUrl comment))
+      pure ()
     else do
       let
         msg = "At this point we should do something for these links"
           ++ show allLinks
       s <- mapM (getStoryForLink config) allLinks
       commentStories <- traverse runExceptT s
-      logDebug $ T.pack msg
+      _ <- logDebug $ T.pack msg
+      pure ()
 
 
 fn ::
