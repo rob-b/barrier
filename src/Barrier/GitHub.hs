@@ -66,9 +66,9 @@ data GitHubRequestParams = GitHubRequestParams
 mkStatusParams :: HookPullRequest -> GitHubRequestParams
 mkStatusParams pr =
   let head' = whPullReqHead pr
-      _commit = GitHub.mkCommitName $ whPullReqTargetSha head'
-      _owner = GitHub.mkOwnerName . whUserLogin $ whPullReqTargetUser head'
-      _repo = GitHub.mkRepoName . whRepoName $ whPullReqTargetRepo head'
+      commit = GitHub.mkCommitName $ whPullReqTargetSha head'
+      owner = GitHub.mkOwnerName . whUserLogin $ whPullReqTargetUser head'
+      repo = GitHub.mkRepoName . whRepoName $ whPullReqTargetRepo head'
   in GitHubRequestParams {..}
 
 
@@ -85,9 +85,9 @@ mkCommentParams :: HookPullRequest -> GitHubCommentRequestParams
 mkCommentParams pr =
   let issueUrl = whPullReqIssueUrl pr
       head' = whPullReqHead pr
-      _commentOwner = GitHub.mkOwnerName . whUserLogin $ whPullReqTargetUser head'
-      _commentRepo = GitHub.mkRepoName . whRepoName $ whPullReqTargetRepo head'
-      _commentIssue = getIssueId (encodeUtf8 $ getUrl issueUrl)
+      commentOwner = GitHub.mkOwnerName . whUserLogin $ whPullReqTargetUser head'
+      commentRepo = GitHub.mkRepoName . whRepoName $ whPullReqTargetRepo head'
+      commentIssue = getIssueId (encodeUtf8 $ getUrl issueUrl)
   in GitHubCommentRequestParams {..}
 
 
