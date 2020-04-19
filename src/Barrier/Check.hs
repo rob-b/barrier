@@ -10,30 +10,21 @@ module Barrier.Check
 
 import           Barrier.Clubhouse            (webappURIRefToApiUrl)
 import           Barrier.Clubhouse.Types      (ClubhouseLink)
-import           Barrier.Events.Types         (WrappedHook (WrappedHookIssueComment, WrappedHookPullRequest))
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
 import           Data.Either                  (rights)
 import           Data.Text                    (Text)
 import qualified Data.Text                    as T
 import           Data.Text.Encoding           (encodeUtf8)
-import           GitHub.Data.Webhooks.Payload (whIssueCommentBody, whPullReqBody)
+import           GitHub.Data.Webhooks.Payload (HookPullRequest, whPullReqBody)
 import           Lens.Micro.Platform          ((^?), _Just)
-import           URI.ByteString               (Absolute, URIRef, authorityHostL, authorityL,
-                                               hostBSL, parseURI, strictURIParserOptions)
+import           URI.ByteString
+    (Absolute, URIRef, authorityHostL, authorityL, hostBSL, parseURI, strictURIParserOptions)
 
 
 --------------------------------------------------------------------------------
-getHookBody :: WrappedHook -> Text
-getHookBody hook
-  | (WrappedHookIssueComment inner) <- hook = whIssueCommentBody inner
-  | (WrappedHookPullRequest inner) <- hook = whPullReqBody inner
-  | otherwise = ""
-
-
---------------------------------------------------------------------------------
-extractClubhouseLinks :: WrappedHook -> [ClubhouseLink]
-extractClubhouseLinks hook = extractClubhouseLinks2 (getHookBody hook)
+extractClubhouseLinks :: HookPullRequest -> [ClubhouseLink]
+extractClubhouseLinks hook = extractClubhouseLinks2 (whPullReqBody hook)
 
 
 --------------------------------------------------------------------------------

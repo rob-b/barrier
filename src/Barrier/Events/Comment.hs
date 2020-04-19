@@ -61,27 +61,29 @@ handleCommentEvent event =
 
 handleIssueCommentEventAction :: IssueCommentEvent -> (AppConfig -> IO ())
 handleIssueCommentEventAction issueEvent = do
-  maybe noop action $ getIssueCommentFromEvent issueEvent
+  maybe noop action $ grr issueEvent
   where
-    action :: HookIssueComment -> (AppConfig -> IO ())
-    action comment =
-      if whUserLogin (whIssueCommentUser comment) == "robozd"
+
+    action :: IssueCommentEvent -> (AppConfig -> IO ())
+    action issueCommentEvent =
+      if "robozd" == (whUserLogin . whIssueCommentUser . evIssueCommentPayload $ issueCommentEvent)
         then noop
-        else doThingForComment (evIssueCommentIssue issueEvent) comment
-
--- whIssueUrl $ evIssueCommentIssue issueCommentEvent
+        else doThingForComment issueCommentEvent
 
 
-getIssueCommentFromEvent :: IssueCommentEvent -> Maybe HookIssueComment
-getIssueCommentFromEvent issue@(evIssueCommentAction -> IssueCommentCreatedAction) =
-  Just $ evIssueCommentPayload issue
-getIssueCommentFromEvent issue@(evIssueCommentAction -> IssueCommentEditedAction) =
-  Just $ evIssueCommentPayload issue
-getIssueCommentFromEvent _ = Nothing
+-- possible action values are created/edited/deleted/unknown. We only want to act on created or
+-- edited and so we match those two and return the actual comment payload and we disregard anything
+-- else by returning Nothing
+grr :: IssueCommentEvent -> Maybe IssueCommentEvent
+grr i@(evIssueCommentAction -> IssueCommentCreatedAction) = Just i
+grr i@(evIssueCommentAction -> IssueCommentEditedAction)  = Just i
+grr _                                                     = Nothing
 
 
-doThingForComment :: a -> HookIssueComment -> AppConfig -> IO ()
-doThingForComment _issue comment config = do
+doThingForComment :: IssueCommentEvent -> AppConfig -> IO ()
+doThingForComment issueEvent config = do
+  -- get the comment from the event payload and then check the comment body for links
+  let comment = evIssueCommentPayload issueEvent
   let allLinks = extractClubhouseLinks2 (whIssueCommentBody comment)
   stories <- mapM (getStoryForLink config) allLinks
   (commentStories :: [Either StoryError Story]) <- traverse runExceptT stories

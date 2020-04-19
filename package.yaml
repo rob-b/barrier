@@ -63,6 +63,7 @@ library:
   - aeson-better-errors
   - string-conversions
   - generic-lens
+  - world-peace
 
 executables:
   barrier:
