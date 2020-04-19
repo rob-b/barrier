@@ -7,7 +7,28 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
-module Barrier.Clubhouse.Types where
+module Barrier.Clubhouse.Types
+  ( ClubhouseLink(ClubhouseLink)
+  , Story(Story, storyUrl)
+  , StoryError(StoryHttpError, StoryNotFoundError, StoryParseError)
+  , ClubhouseAction
+  , ClubhouseActionEntityType(ChaStory)
+  , ClubhouseEvent(ClubhouseEvent)
+  , EventParseError(EventParseError)
+  , ExpandedAction(ExpandedAction)
+  , WorkflowStateOptions(ClubhouseWorkflowChanged,
+                     ClubhouseWorkflowCreated)
+  , chActionEntityType
+  , chActionId
+  , chActionName
+  , chActionWorkflowState
+  , chActions
+  , chNewState
+  , chOldState
+  , decodeChEvent
+  , decodeChReferences
+  , getWorkFlowId
+  ) where
 
 import           Data.Aeson
     ( FromJSON

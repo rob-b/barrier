@@ -2,43 +2,54 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns        #-}
-module Barrier.Events.Comment where
+
+module Barrier.Events.Comment
+  ( handleCommentEvent
+  , handleIssueCommentEventAction
+  ) where
 
 
-import           Barrier.Actions              (getStoryForLink)
-import           Barrier.Check                (extractClubhouseLinks2)
-import           Barrier.Clubhouse.Types      (ClubhouseLink, Story(Story), StoryError)
-import           Barrier.Config               (AppConfig)
-import           Barrier.Events               (noop)
-import           Control.Error                (ExceptT, runExceptT)
-import           Control.Logger.Simple        (logDebug)
-import           Control.Monad                (when)
-import           Control.Monad.IO.Class       (MonadIO)
-import           Data.Aeson                   (Value, object, (.=))
-import qualified Data.ByteString.Char8        as C
-import           Data.Either                  (rights)
-import           Data.Monoid                  ((<>))
-import qualified Data.Text                    as T
-import           Data.Text.Encoding           (encodeUtf8)
-import qualified Data.Vector                  as V
-import           GitHub.Data.Id               (Id(Id))
+import           Barrier.Actions               (getStoryForLink)
+import           Barrier.Check                 (extractClubhouseLinks2)
+import           Barrier.Clubhouse.Types       (ClubhouseLink, Story(Story), StoryError)
+import           Barrier.Config                (AppConfig, configGitHubToken)
+import           Barrier.Events                (noop)
+import           Control.Error                 (ExceptT, runExceptT)
+import           Control.Logger.Simple         (logDebug)
+import           Control.Monad                 (when)
+import           Control.Monad.IO.Class        (MonadIO)
+import           Data.Aeson                    (Value, object, (.=))
+import qualified Data.ByteString.Char8         as C
+import           Data.Either                   (rights)
+import           Data.Monoid                   ((<>))
+import qualified Data.Text                     as T
+import           Data.Text.Encoding            (encodeUtf8)
+import qualified Data.Vector                   as V
+import qualified GitHub.Data                   as GitHub
+import           GitHub.Data.Id                (Id(Id))
+import           GitHub.Data.PullRequests      (pullRequestHead)
 import           GitHub.Data.Webhooks.Events
     ( IssueCommentEvent
     , IssueCommentEventAction(IssueCommentCreatedAction, IssueCommentEditedAction)
     , evIssueCommentAction
     , evIssueCommentIssue
     , evIssueCommentPayload
+    , evIssueCommentRepo
     )
 import           GitHub.Data.Webhooks.Payload
-    ( HookIssueComment
-    , URL
+    ( URL
     , getUrl
     , whIssueCommentBody
     , whIssueCommentHtmlUrl
     , whIssueCommentUser
+    , whIssueNumber
+    , whRepoName
+    , whRepoOwner
+    , whSimplUserName
     , whUserLogin
     )
-import           URI.ByteString               (parseURI, strictURIParserOptions, uriPath)
+import           GitHub.Endpoints.PullRequests (pullRequest')
+import           URI.ByteString                (parseURI, strictURIParserOptions, uriPath)
 
 
 handleCommentEvent :: IssueCommentEvent -> Value

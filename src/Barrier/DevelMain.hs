@@ -14,22 +14,21 @@
 -- There is more information about this approach,
 -- on the wiki: https://github.com/yesodweb/yesod/wiki/ghci
 
-module Barrier.DevelMain where
+module Barrier.DevelMain (update, shutdown) where
 
 import           Barrier.Config           (mkAppConfig)
 import           Barrier.Queue            ()
-import           Barrier.Server           (AppState (AppState), mkApp, setupApp, shutdownApp)
-import           Control.Concurrent       (MVar, ThreadId, forkIO, killThread, newEmptyMVar,
-                                           putMVar, takeMVar)
+import           Barrier.Server           (AppState(AppState), mkApp, setupApp, shutdownApp)
+import           Control.Concurrent
+    (MVar, ThreadId, forkIO, killThread, newEmptyMVar, putMVar, takeMVar)
 import           Control.Exception        (finally)
 import           Control.Monad            ((>=>))
 import           Data.IORef               (IORef, newIORef, readIORef, writeIORef)
-import           Foreign.Store            (Store (Store), lookupStore, readStore, storeAction,
-                                           withStore)
+import           Foreign.Store
+    (Store(Store), lookupStore, readStore, storeAction, withStore)
 import           GHC.Word                 (Word32)
 import           Network.Wai.Handler.Warp (defaultSettings, runSettings, setPort)
 import           System.Exit              (exitFailure)
--- import           Init                     (initialize, shutdownApp)
 
 
 --------------------------------------------------------------------------------

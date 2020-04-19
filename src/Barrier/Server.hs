@@ -6,7 +6,12 @@
 {-# LANGUAGE TypeOperators       #-}
 
 module Barrier.Server
-   where
+  ( AppState(AppState)
+  , mkApp
+  , setupApp
+  , shutdownApp
+  , run
+  ) where
 
 import           Barrier.Config
     (AppConfig, configGitHubSecret, lookupEnv, mkAppConfig)

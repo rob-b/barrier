@@ -1,7 +1,9 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Barrier.Handlers.Clubhouse
-   where
+  (
+processClubhouseWebhook
+  ) where
 
 
 import           Barrier.Clubhouse.Types

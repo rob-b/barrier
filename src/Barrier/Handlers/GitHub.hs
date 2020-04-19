@@ -2,7 +2,14 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Barrier.Handlers.GitHub where
+module Barrier.Handlers.GitHub
+  ( EventBody(EventBody)
+  , EventHeader(EventHeader)
+  , UnsupportedEvent(UnsupportedEvent)
+  , selectAction
+  , selectEventType
+  , selectResponse
+  ) where
 
 import           Barrier.Config               (AppConfig)
 import           Barrier.Events.Comment       (handleCommentEvent, handleIssueCommentEventAction)

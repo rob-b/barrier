@@ -1,4 +1,6 @@
-module Barrier.ListUtils where
+module Barrier.ListUtils
+  ( ordNub
+  ) where
 
 import qualified Data.Set as Set
 

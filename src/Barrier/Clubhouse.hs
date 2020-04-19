@@ -3,7 +3,11 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Barrier.Clubhouse where
+module Barrier.Clubhouse
+  ( getStory
+  , webappURIRefToApiUrl
+  , mkClubhouseStoryUrl
+  ) where
 
 import           Barrier.Clubhouse.Types
     ( ClubhouseLink(ClubhouseLink)

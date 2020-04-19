@@ -4,7 +4,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns        #-}
 
-module Barrier.Events.PullRequest where
+module Barrier.Events.PullRequest
+  ( handlePullRequestAction
+  , handlePullRequestEvent
+  ) where
 
 import           Barrier.Actions              (getStoryForLink, sequenceEithers)
 import           Barrier.Check                (extractClubhouseLinks, extractClubhouseLinks2)

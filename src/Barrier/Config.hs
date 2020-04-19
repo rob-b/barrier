@@ -1,6 +1,15 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Barrier.Config where
+
+module Barrier.Config
+  ( AppConfig
+  , configClubhouseToken
+  , mkAppConfig
+  , readish
+  , configGitHubToken
+  , configGitHubSecret
+  , lookupEnv
+  ) where
 
 import           Data.ByteString    (ByteString)
 import           Data.String        (IsString, fromString)
