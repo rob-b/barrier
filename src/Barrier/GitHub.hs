@@ -1,42 +1,65 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE AllowAmbiguousTypes       #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE DuplicateRecordFields     #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE TypeApplications          #-}
 
-module Barrier.GitHub where
+
+module Barrier.GitHub
+  ( addStoryLinkComment
+  , getCommentsForPullRequest
+  , setHasStoryStatus
+  , setMissingStoryStatus
+  ) where
 
 import           Barrier.Clubhouse.Types          (Story, storyUrl)
 import           Barrier.Config                   (AppConfig, configGitHubToken)
 import           Control.Logger.Simple            (logDebug)
 import qualified Data.ByteString                  as B
+import           Data.Generics.Product            (field)
 import           Data.Text                        (Text)
 import qualified Data.Text                        as T
 import           Data.Text.Encoding               (decodeUtf8, encodeUtf8)
 import           Data.Text.Read                   (decimal)
 import           Data.Vector                      (Vector)
+import           GHC.Generics                     (Generic)
 import qualified GitHub.Auth                      as GitHub
 import qualified GitHub.Data                      as GitHub
-import           GitHub.Data.Webhooks.Payload     (HookPullRequest, getUrl, whPullReqHead,
-                                                   whPullReqIssueUrl, whPullReqTargetRepo,
-                                                   whPullReqTargetSha, whPullReqTargetUser,
-                                                   whRepoName, whUserLogin)
+import           GitHub.Data.Webhooks.Payload
+    ( HookPullRequest
+    , getUrl
+    , whPullReqHead
+    , whPullReqIssueUrl
+    , whPullReqTargetRepo
+    , whPullReqTargetSha
+    , whPullReqTargetUser
+    , whRepoName
+    , whUserLogin
+    )
 import qualified GitHub.Endpoints.Issues.Comments as GitHub
 import qualified GitHub.Endpoints.Repos.Statuses  as GitHub
-import           Lens.Micro.Platform              (makeLenses, (^.))
+import           Lens.Micro.Platform              ((^.))
 import           System.Random                    (randomRIO)
-import           URI.ByteString                   (parseURI, serializeURIRef',
-                                                   strictURIParserOptions, uriPath)
+import           URI.ByteString
+    (parseURI, serializeURIRef', strictURIParserOptions, uriPath)
+
+
+data StatusParams = StatusParams
+  { commit :: GitHub.Name GitHub.Commit
+  , owner  :: GitHub.Name GitHub.Owner
+  , repo   :: GitHub.Name GitHub.Repo
+  } deriving (Generic, Show)
 
 
 data GitHubRequestParams = GitHubRequestParams
-  { _commit :: GitHub.Name GitHub.Commit
-  , _owner  :: GitHub.Name GitHub.Owner
-  , _repo   :: GitHub.Name GitHub.Repo
-  } deriving (Show)
-
-
-makeLenses ''GitHubRequestParams
+  { commit :: GitHub.Name GitHub.Commit
+  , owner  :: GitHub.Name GitHub.Owner
+  , repo   :: GitHub.Name GitHub.Repo
+  } deriving (Generic, Show)
 
 
 --------------------------------------------------------------------------------
@@ -51,13 +74,10 @@ mkStatusParams pr =
 
 --------------------------------------------------------------------------------
 data GitHubCommentRequestParams = GitHubCommentRequestParams
-  { _commentIssue :: GitHub.IssueNumber
-  , _commentOwner :: GitHub.Name GitHub.Owner
-  , _commentRepo  :: GitHub.Name GitHub.Repo
-  } deriving (Show)
-
-
-makeLenses ''GitHubCommentRequestParams
+  { commentIssue :: GitHub.IssueNumber
+  , commentOwner :: GitHub.Name GitHub.Owner
+  , commentRepo  :: GitHub.Name GitHub.Repo
+  } deriving (Generic, Show)
 
 
 --------------------------------------------------------------------------------
@@ -80,9 +100,9 @@ setHasStoryStatus conf pr _story = do
     either show show <$>
     GitHub.createStatus
       auth'
-      (params ^. owner)
-      (params ^. repo)
-      (params ^. commit)
+      (params ^. field @"owner")
+      (params ^. field @"repo")
+      (params ^. field @"commit")
       (GitHub.NewStatus
          GitHub.StatusSuccess
          Nothing
@@ -100,9 +120,9 @@ setMissingStoryStatus conf pr = do
     either show show <$>
     GitHub.createStatus
       auth'
-      (params ^. owner)
-      (params ^. repo)
-      (params ^. commit)
+      (params ^. field @"owner")
+      (params ^. field @"repo")
+      (params ^. field @"commit")
       (GitHub.NewStatus
          GitHub.StatusError
          Nothing
@@ -150,9 +170,9 @@ addStoryLinkComment conf pr story = do
     either show show <$>
     GitHub.createComment
       auth'
-      (params ^. commentOwner)
-      (params ^. commentRepo)
-      ((params ^. commentIssue) :: GitHub.IssueNumber)
+      (params ^. field @"commentOwner")
+      (params ^. field @"commentRepo")
+      ((params ^. field @"commentIssue") :: GitHub.IssueNumber)
       (decodeUtf8 . serializeURIRef' $ storyUrl story)
   logDebug $ T.pack (show content)
 
@@ -164,7 +184,11 @@ getCommentsForPullRequest :: AppConfig
 getCommentsForPullRequest conf pr = do
   let auth' = Just . GitHub.OAuth $ configGitHubToken conf
   let params = mkCommentParams pr
-  GitHub.comments' auth' (params ^. commentOwner) (params ^. commentRepo) (params ^. commentIssue)
+  GitHub.comments'
+    auth'
+    (params ^. field @"commentOwner")
+    (params ^. field @"commentRepo")
+    (params ^. field @"commentIssue")
 
 
 --------------------------------------------------------------------------------
@@ -182,9 +206,9 @@ randomWarning conf pr = do
         either show show <$>
         GitHub.createComment
           auth'
-          (params ^. commentOwner)
-          (params ^. commentRepo)
-          (params ^. commentIssue)
+          (params ^. field @"commentOwner")
+          (params ^. field @"commentRepo")
+          (params ^. field @"commentIssue")
           "Your move, creep"
       pure ()
 
