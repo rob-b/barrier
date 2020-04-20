@@ -1,6 +1,6 @@
 module Barrier.Playground where
 
-import           Data.Aeson                   (decodeStrict)
+import           Data.Aeson                   (decodeStrict, eitherDecodeStrict)
 import           Data.ByteString              (ByteString)
 import qualified Data.ByteString              as B
 import           Data.Maybe                   (fromMaybe)
@@ -29,11 +29,11 @@ payloadFromFixture = evPullReqPayload <$> eventFromFixture
 --------------------------------------------------------------------------------
 pullRequestPayloadFromFixture :: IO GitHub.PullRequest
 pullRequestPayloadFromFixture = do
-  fromMaybe (error "cannot decode pull_request_payload.json") . decodeStrict <$> readFixture "pull_request_payload.json"
+  fromMaybe (error "cannot decode pull_request_payload.json") . decodeStrict <$>
+    readFixture "pull_request_payload.json"
 
 
 --------------------------------------------------------------------------------
-issueCommentEventFromFixture :: IO (Maybe IssueCommentEvent)
+issueCommentEventFromFixture :: IO (Either String IssueCommentEvent)
 issueCommentEventFromFixture = do
-  fromMaybe (error "cannot decode issue_comment_created.json") . decodeStrict <$>
-    readFixture "issue_comment_created.json"
+   eitherDecodeStrict <$> readFixture "issue_comment_created_with_null_body.json"

@@ -19,13 +19,6 @@ packages:
   original:
     hackage: simple-logger-0.0.4
 - completed:
-    hackage: github-webhooks-0.10.1@sha256:5dbafea3f2e98be43d01e5043e103b829472b07925e287b91ba2a5399b2e7e45,3527
-    pantry-tree:
-      size: 3191
-      sha256: 5a461b28c7a8dc804cd096a2a8ab0ee8cf10edda4c29bc6e69483c543410723e
-  original:
-    hackage: github-webhooks-0.10.1
-- completed:
     hackage: Spock-0.13.0.0@sha256:163ef2698fed8f5801428d8dbe794fd126415a5ff3304b227750fdc4037497be,3745
     pantry-tree:
       size: 1118
@@ -74,6 +67,20 @@ packages:
       sha256: b8371b82b496602010a3a5b8e33a0e9108a5a3c70d99f842859bae89face740c
   original:
     hackage: focus-0.1.5.2@sha256:fc5c76a5be3a9a1c456106d6f389939299c7e05a1a24938b909f043e36a3e37b,1519
+- completed:
+    cabal-file:
+      size: 3915
+      sha256: dc5ba7835cbedd91b1a13d3ecff278598db3ae24e6a427d10751bcef5b644352
+    name: github-webhooks
+    version: 0.12.0
+    git: https://github.com/rob-b/github-webhooks.git
+    pantry-tree:
+      size: 6205
+      sha256: 7a033701dff6d1137faff785c3d376ffbca34934b3662220cc7795c516bfc69b
+    commit: a4f618c5bbd1b44229f4cdf88e6d896deef0e07c
+  original:
+    git: https://github.com/rob-b/github-webhooks.git
+    commit: a4f618c5bbd1b44229f4cdf88e6d896deef0e07c
 snapshots:
 - completed:
     size: 523448
