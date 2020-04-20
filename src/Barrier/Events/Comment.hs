@@ -6,6 +6,8 @@
 module Barrier.Events.Comment
   ( handleCommentEvent
   , handleIssueCommentEventAction
+  , isSupportedEvent
+  , doThingForComment
   ) where
 
 
@@ -25,6 +27,7 @@ import           Data.Monoid                   ((<>))
 import qualified Data.Text                     as T
 import           Data.Text.Encoding            (encodeUtf8)
 import qualified Data.Vector                   as V
+import           Debug.Trace
 import qualified GitHub.Data                   as GitHub
 import           GitHub.Data.Id                (Id(Id))
 import           GitHub.Data.PullRequests      (pullRequestHead)
@@ -61,7 +64,7 @@ handleCommentEvent event =
 
 handleIssueCommentEventAction :: IssueCommentEvent -> (AppConfig -> IO ())
 handleIssueCommentEventAction issueEvent = do
-  maybe noop action $ grr issueEvent
+  maybe noop action $ isSupportedEvent issueEvent
   where
 
     action :: IssueCommentEvent -> (AppConfig -> IO ())
@@ -74,19 +77,20 @@ handleIssueCommentEventAction issueEvent = do
 -- possible action values are created/edited/deleted/unknown. We only want to act on created or
 -- edited and so we match those two and return the actual comment payload and we disregard anything
 -- else by returning Nothing
-grr :: IssueCommentEvent -> Maybe IssueCommentEvent
-grr i@(evIssueCommentAction -> IssueCommentCreatedAction) = Just i
-grr i@(evIssueCommentAction -> IssueCommentEditedAction)  = Just i
-grr _                                                     = Nothing
+isSupportedEvent :: IssueCommentEvent -> Maybe IssueCommentEvent
+isSupportedEvent i@(evIssueCommentAction -> IssueCommentCreatedAction) = Just i
+isSupportedEvent i@(evIssueCommentAction -> IssueCommentEditedAction)  = Just i
+isSupportedEvent _                                                     = Nothing
 
 
 doThingForComment :: IssueCommentEvent -> AppConfig -> IO ()
 doThingForComment issueEvent config = do
   -- get the comment from the event payload and then check the comment body for links
-  let comment = evIssueCommentPayload issueEvent
+  let comment = traceShow (evIssueCommentPayload issueEvent) (evIssueCommentPayload issueEvent)
   let allLinks = extractClubhouseLinks2 (whIssueCommentBody comment)
   stories <- mapM (getStoryForLink config) allLinks
   (commentStories :: [Either StoryError Story]) <- traverse runExceptT stories
+  let _xx = traceShow commentStories commentStories
   when
     (null (rights commentStories))
     (logDebug ("No links found in this comment " <> getUrl (whIssueCommentHtmlUrl comment)))
@@ -95,6 +99,18 @@ doThingForComment issueEvent config = do
     where
       xo (Left a)                    = logDebug $ "No story found: " <> T.pack (show a)
       xo (Right (Story _ _ sName _)) = logDebug $ "Found: " <> sName
+
+
+pullRequestForIssueCommentEvent ::
+     IssueCommentEvent -> AppConfig -> IO (Either GitHub.Error GitHub.PullRequestCommit)
+pullRequestForIssueCommentEvent issueEvent config =
+  let hookIssue = evIssueCommentIssue issueEvent
+      issueNumber = GitHub.IssueNumber $ whIssueNumber hookIssue
+      repo' = evIssueCommentRepo issueEvent
+      _repo = GitHub.mkRepoName (whRepoName repo')
+      _owner = GitHub.mkOwnerName (either whSimplUserName whUserLogin (whRepoOwner repo'))
+      auth = Just . GitHub.OAuth $ configGitHubToken config
+  in (fmap . fmap) pullRequestHead (pullRequest' auth _owner _repo issueNumber)
 
 
 fn ::

@@ -150,7 +150,7 @@ getStory (ClubhouseLink url) = do
 
 
 --------------------------------------------------------------------------------
-handleExceptT' :: (Exception e, Functor m, MonadCatch m) => (e -> Maybe x) -> m a -> ExceptT x m a
+handleExceptT' :: (Exception e, MonadCatch m) => (e -> Maybe x) -> m a -> ExceptT x m a
 handleExceptT' handler = ExceptT . tryJust handler
 
 

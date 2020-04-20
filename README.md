@@ -27,7 +27,7 @@ whUserLogin $ whIssueCommentUser xo
 
 ```
 (Just issueCommentEvent) <- issueCommentEventFromFixture
-(Just hookIssueComment) = getIssueFromEvent issueCommentEvent
+(Just issueComment) = isSupportedEvent issueCommentEvent
 (Just config) <- mkAppConfig
-doThingForComment hookIssueComment config
+doThingForComment issueComment config
 ```
