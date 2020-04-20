@@ -135,7 +135,7 @@ checkerAndUpdater config payload stories = do
     setStatus [] = setMissingStoryStatus config payload
     setStatus stories'@(story:_) = do
       let story' = foundStory story
-      setHasStoryStatus config payload story'
+      setHasStoryStatus config payload
       unless (any commentsOnly stories') (addStoryLinkComment config payload story')
 
 

@@ -13,7 +13,9 @@ module Barrier.GitHub
   ( addStoryLinkComment
   , getCommentsForPullRequest
   , setHasStoryStatus
+  , setHasStoryStatus'
   , setMissingStoryStatus
+  , GitHubRequestParams(..)
   ) where
 
 import           Barrier.Clubhouse.Types          (Story, storyUrl)
@@ -46,13 +48,6 @@ import           Lens.Micro.Platform              ((^.))
 import           System.Random                    (randomRIO)
 import           URI.ByteString
     (parseURI, serializeURIRef', strictURIParserOptions, uriPath)
-
-
-data StatusParams = StatusParams
-  { commit :: GitHub.Name GitHub.Commit
-  , owner  :: GitHub.Name GitHub.Owner
-  , repo   :: GitHub.Name GitHub.Repo
-  } deriving (Generic, Show)
 
 
 data GitHubRequestParams = GitHubRequestParams
@@ -91,11 +86,9 @@ mkCommentParams pr =
   in GitHubCommentRequestParams {..}
 
 
---------------------------------------------------------------------------------
-setHasStoryStatus :: AppConfig -> HookPullRequest -> Story -> IO ()
-setHasStoryStatus conf pr _story = do
-  let auth' = GitHub.OAuth $ configGitHubToken conf
-  let params = mkStatusParams pr
+
+setHasStoryStatus' :: GitHubRequestParams -> GitHub.Auth -> IO ()
+setHasStoryStatus' params auth' = do
   content <-
     either show show <$>
     GitHub.createStatus
@@ -109,6 +102,14 @@ setHasStoryStatus conf pr _story = do
          (Just "Has link to clubhouse story.")
          (Just "Barrier story check"))
   logDebug $ T.pack (show content)
+
+
+--------------------------------------------------------------------------------
+setHasStoryStatus :: AppConfig -> HookPullRequest -> IO ()
+setHasStoryStatus conf pr = do
+  let auth' = GitHub.OAuth $ configGitHubToken conf
+  let params = mkStatusParams pr
+  setHasStoryStatus' params auth'
 
 
 --------------------------------------------------------------------------------

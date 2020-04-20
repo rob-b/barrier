@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns        #-}
@@ -8,6 +9,7 @@ module Barrier.Events.Comment
   , handleIssueCommentEventAction
   , isSupportedEvent
   , doThingForComment
+  , pullRequestForIssueCommentEvent
   ) where
 
 
@@ -16,13 +18,14 @@ import           Barrier.Check                 (extractClubhouseLinks2)
 import           Barrier.Clubhouse.Types       (ClubhouseLink, Story(Story), StoryError)
 import           Barrier.Config                (AppConfig, configGitHubToken)
 import           Barrier.Events                (noop)
+import           Barrier.GitHub                (GitHubRequestParams(..), setHasStoryStatus')
 import           Control.Error                 (ExceptT, runExceptT)
 import           Control.Logger.Simple         (logDebug)
 import           Control.Monad                 (when)
 import           Control.Monad.IO.Class        (MonadIO)
 import           Data.Aeson                    (Value, object, (.=))
 import qualified Data.ByteString.Char8         as C
-import           Data.Either                   (rights)
+import           Data.Either                   (partitionEithers)
 import           Data.Monoid                   ((<>))
 import qualified Data.Text                     as T
 import           Data.Text.Encoding            (encodeUtf8)
@@ -86,19 +89,50 @@ isSupportedEvent _                                                     = Nothing
 doThingForComment :: IssueCommentEvent -> AppConfig -> IO ()
 doThingForComment issueEvent config = do
   -- get the comment from the event payload and then check the comment body for links
-  let comment = traceShow (evIssueCommentPayload issueEvent) (evIssueCommentPayload issueEvent)
+  let comment = evIssueCommentPayload issueEvent
+
+  -- get all links from the comment that look like they're clubhouse stories
   let allLinks = extractClubhouseLinks2 (whIssueCommentBody comment)
+
+  -- check to see if the clubhouse links are real
   stories <- mapM (getStoryForLink config) allLinks
   (commentStories :: [Either StoryError Story]) <- traverse runExceptT stories
-  let _xx = traceShow commentStories commentStories
-  when
-    (null (rights commentStories))
-    (logDebug ("No links found in this comment " <> getUrl (whIssueCommentHtmlUrl comment)))
-  _ <- mapM_ xo commentStories
-  pure ()
+  let (_lefts, rights) = partitionEithers commentStories
+  if null rights
+    then logDebug ("No links found in this comment " <> getUrl (whIssueCommentHtmlUrl comment))
+    else do
+      mapM (either renderError renderStory) commentStories >>= print
     where
-      xo (Left a)                    = logDebug $ "No story found: " <> T.pack (show a)
-      xo (Right (Story _ _ sName _)) = logDebug $ "Found: " <> sName
+      renderError :: (Show a, MonadIO m) => a -> m T.Text
+      renderError storyError = do
+        let msg = T.pack $ show storyError
+        logDebug msg
+        pure msg
+
+      renderStory :: Story -> IO T.Text
+      renderStory (Story _ _ sName _) = do
+        logDebug $ "Found: " <> sName
+        pullRequestForIssueCommentEvent issueEvent config >>= \case
+          Left err -> error $ show err
+          Right pullRequestCommit -> do
+            let m = traceShow pullRequestCommit (mkRequestParams pullRequestCommit)
+            let auth = GitHub.OAuth $ configGitHubToken config
+            y <- maybe undefined (`setHasStoryStatus'` auth) m
+            traceShow y (pure (T.pack $ show m))
+
+
+mkRequestParams :: GitHub.PullRequestCommit -> Maybe GitHubRequestParams
+mkRequestParams pullRequestCommit =
+  let commit' = GitHub.mkCommitName $ GitHub.pullRequestCommitSha pullRequestCommit
+  in case GitHub.pullRequestCommitRepo pullRequestCommit of
+       Nothing -> Nothing
+       Just repo' ->
+         Just
+           GitHubRequestParams
+           { commit = commit'
+           , owner = GitHub.simpleOwnerLogin (GitHub.repoOwner repo')
+           , repo = GitHub.repoName repo'
+           }
 
 
 pullRequestForIssueCommentEvent ::
