@@ -11,30 +11,22 @@ module Barrier.Handlers.GitHub
   , selectResponse
   ) where
 
-import           Barrier.Config               (AppConfig)
-import           Barrier.Events.Comment       (handleCommentEvent, handleIssueCommentEventAction)
-import           Barrier.Events.PullRequest   (handlePullRequestAction, handlePullRequestEvent)
-import           Barrier.Events.Types
-    (WrappedEvent(WrappedIssueComment, WrappedPullRequest))
+import           Barrier.Config             (AppConfig)
+import           Barrier.Events.Comment     (handleCommentEvent, handleIssueCommentEventAction)
+import           Barrier.Events.PullRequest (handlePullRequestAction, handlePullRequestEvent)
+import           Barrier.Events.Types       (WrappedEvent(WrappedIssueComment, WrappedPullRequest))
 import           Data.Aeson
-    (Value(String), decodeStrict, eitherDecode, eitherDecodeStrict, encode)
-import           Data.ByteString              (ByteString)
-import qualified Data.ByteString              as B
-import           Data.ByteString.Lazy         (toStrict)
-import           Data.Maybe                   (fromMaybe)
-import           Data.Monoid                  ((<>))
-import           Data.String.Conversions      (convertString)
-import           Data.Text.Encoding           (decodeUtf8)
-import qualified GitHub.Data.PullRequests     as GitHub
+    (Value(String), eitherDecode, eitherDecodeStrict, encode)
+import           Data.ByteString            (ByteString)
+import           Data.ByteString.Lazy       (toStrict)
+import           Data.String.Conversions    (convertString)
+import           Data.Text.Encoding         (decodeUtf8)
 import           GitHub.Data.Webhooks
     (RepoWebhookEvent(WebhookIssueCommentEvent, WebhookPullRequestEvent))
-import           GitHub.Data.Webhooks.Events
-    (IssueCommentEvent, PullRequestEvent, evPullReqPayload)
-import           GitHub.Data.Webhooks.Payload (HookPullRequest)
 
 
-newtype EventHeader = EventHeader { unEventHeader :: ByteString }
-newtype EventBody = EventBody { unEventBody :: ByteString }
+newtype EventHeader = EventHeader ByteString
+newtype EventBody = EventBody ByteString
 newtype UnsupportedEvent = UnsupportedEvent { unUnsupportedEvent :: ByteString } deriving (Show)
 
 
@@ -82,32 +74,3 @@ selectResponse (WrappedPullRequest pr)     = handlePullRequestEvent pr
 selectAction :: WrappedEvent -> (AppConfig -> IO ())
 selectAction (WrappedPullRequest pr)     = handlePullRequestAction pr
 selectAction (WrappedIssueComment issue) = handleIssueCommentEventAction issue
-
-
---------------------------------------------------------------------------------
-readFixture :: FilePath -> IO ByteString
-readFixture name = B.readFile $ "fixtures/" <> name
-
-
---------------------------------------------------------------------------------
-eventFromFixture :: IO PullRequestEvent
-eventFromFixture = do
-  fromMaybe (error "cannot decode zd_pull_request_event.json") . decodeStrict <$> readFixture "zd_pull_request_event.json"
-
-
---------------------------------------------------------------------------------
-payloadFromFixture :: IO HookPullRequest
-payloadFromFixture = evPullReqPayload <$> eventFromFixture
-
-
---------------------------------------------------------------------------------
-pullRequestPayloadFromFixture :: IO GitHub.PullRequest
-pullRequestPayloadFromFixture = do
-  fromMaybe (error "cannot decode pull_request_payload.json") . decodeStrict <$> readFixture "pull_request_payload.json"
-
-
---------------------------------------------------------------------------------
-issueCommentEventFromFixture :: IO (Maybe IssueCommentEvent)
-issueCommentEventFromFixture = do
-  fromMaybe (error "cannot decode issue_comment_created.json") . decodeStrict <$>
-    readFixture "issue_comment_created.json"
