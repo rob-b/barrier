@@ -6,38 +6,67 @@
 {-# LANGUAGE TypeOperators       #-}
 
 module Barrier.Server
-   where
+  ( AppState(AppState)
+  , mkApp
+  , setupApp
+  , shutdownApp
+  , run
+  ) where
 
-
-import           Barrier.Config                       (AppConfig, configGitHubSecret, lookupEnv,
-                                                       mkAppConfig)
-import           Barrier.Events                       (selectAction, selectEventType,
-                                                       selectResponse)
+import           Barrier.Config
+    (AppConfig, configGitHubSecret, lookupEnv, mkAppConfig)
+import           Barrier.Handlers.Clubhouse           (processClubhouseWebhook)
+import           Barrier.Handlers.GitHub
+    ( EventBody(EventBody)
+    , EventHeader(EventHeader)
+    , UnsupportedEvent(UnsupportedEvent)
+    , selectAction
+    , selectEventType
+    , selectResponse
+    )
 import qualified Barrier.Queue                        as Q
 import           Control.Concurrent.Async             (Async, async, wait)
 import           Control.Concurrent.STM.TBMQueue      (TBMQueue, closeTBMQueue)
 import           Control.Exception.Safe               (bracket)
-import           Control.Logger.Simple                (LogConfig (LogConfig), withGlobalLogging)
+import           Control.Logger.Simple
+    (LogConfig(LogConfig), logError, logInfo, withGlobalLogging)
 import           Control.Monad                        (void)
 import           Control.Monad.IO.Class               (MonadIO, liftIO)
 import           Control.Monad.STM                    (atomically)
-import           Data.Aeson                           (ToJSON, Value, object, (.=))
+import           Data.Aeson                           (ToJSON, Value, encode, object, (.=))
 import           Data.ByteString                      (ByteString)
-import           Data.HVect                           (HVect ((:&:), HNil))
+import qualified Data.ByteString.Char8                as C
+import           Data.ByteString.Lazy                 (toStrict)
+import           Data.HVect                           (HVect((:&:), HNil))
+import qualified Data.Text                            as T
 import           Data.Text.Encoding                   (decodeUtf8)
 import qualified Data.Vector                          as V
 import           Debug.Trace                          (trace)
 import           GitHub.Data.Webhooks.Secure          (isSecurePayload)
-import           Network.HTTP.Types.Status            (Status (Status), status401, status422)
+import           Network.HTTP.Types.Status            (Status(Status), status401, status422)
 import           Network.Wai                          (Application, Middleware)
 import qualified Network.Wai.Handler.Warp             as Warp
 import           Network.Wai.Middleware.RequestLogger (logStdoutDev)
-import           Web.Spock                            (ActionCtxT, SpockActionCtx, SpockM, body,
-                                                       get, getContext, getState, header, json,
-                                                       post, prehook, rawHeader, root, setStatus,
-                                                       spock, spockAsApp)
-import           Web.Spock.Config                     (PoolOrConn (PCNoDatabase), SpockCfg,
-                                                       defaultSpockCfg, spc_errorHandler)
+import           Web.Spock
+    ( ActionCtxT
+    , SpockActionCtx
+    , SpockM
+    , body
+    , get
+    , getContext
+    , getState
+    , header
+    , json
+    , post
+    , prehook
+    , rawHeader
+    , root
+    , setStatus
+    , spock
+    , spockAsApp
+    )
+import           Web.Spock.Config
+    (PoolOrConn(PCNoDatabase), SpockCfg, defaultSpockCfg, spc_errorHandler)
 
 
 data SignedRequest = SignedRequest
@@ -99,40 +128,62 @@ app :: Api
 app = do
   prehook initHook $ do
     prehook authHook $
-      post root handleEvent
+      post root handleGithub
+    post "/ch" $ do
+      handleClubhouse
   get "/a" $ do
       queue <- appStateQueue <$> getState
-      _ <- liftIO $ Q.add queue (void xo)
+      _ <- liftIO $ Q.add queue (void handleA)
       json ("{}" :: Value)
 
 
---------------------------------------------------------------------------------
-handleEvent :: AuthedApiAction (HVect (SignedRequest ': xs)) a
-handleEvent = do
+---------------------------------------------------------------------------------
+handleA :: IO ()
+handleA = do
+  _ <- appendFile "example.txt" "this is my content\n"
+  pure ()
+
+
+---------------------------------------------------------------------------------
+handleClubhouse :: ApiAction a
+handleClubhouse = do
+  bodyContent <- body
+  case processClubhouseWebhook bodyContent of
+    Left err -> do
+      logError (T.pack $ show err)
+      setStatus status422
+      json (errorObject (422 :: Int) (C.pack $ show err))
+    Right expandedActions -> do
+      logInfo . decodeUtf8 . toStrict $ encode expandedActions
+      json expandedActions
+
+
+---------------------------------------------------------------------------------
+handleGithub :: AuthedApiAction (HVect (SignedRequest ': xs)) a
+handleGithub = do
   bs <- body
-  eventHeader <- rawHeader "X-Github-Event"
-  let eventType = flip selectEventType bs =<< eventHeader
-  case eventType of
+  (eventHeader :: Maybe ByteString) <- rawHeader "X-Github-Event"
+  case eventHeader of
     Nothing -> do
       setStatus status422
-      let reason = errorObject (422 :: Int) "Unsupported event"
+      let reason = errorObject (422 :: Int) "Missing event header."
+      logInfo "Unsupported event"
       json reason
-    Just wrappedEvent -> do
-      case selectAction wrappedEvent of
-        Nothing -> pure ()
-        Just action -> do
+    Just eventHeader' -> do
+      case selectEventType (EventHeader eventHeader') (EventBody bs) of
+        Left (UnsupportedEvent err) -> do
+          setStatus status422
+          let msg = "Unsupported event: " <> err
+          let reason = errorObject (422 :: Int) msg
+          logInfo $ decodeUtf8 msg
+          json reason
+        Right wrappedEvent -> do
+          let action = selectAction wrappedEvent
+          logInfo . decodeUtf8 $ "X-Github-Event: " <> eventHeader'
           queue <- appStateQueue <$> getState
           config <- appStateConfig <$> getState
           _ <- trace "queing action" (liftIO $ Q.add queue (void $ action config))
-          pure ()
-      json (selectResponse wrappedEvent)
-
-
---------------------------------------------------------------------------------
-xo :: IO ()
-xo = do
-  _ <- appendFile "example.txt" "this is my content\n"
-  pure ()
+          json (selectResponse wrappedEvent)
 
 
 --------------------------------------------------------------------------------
@@ -178,4 +229,5 @@ mkApp appState = do
 runApp :: Warp.Port -> Application -> IO ()
 runApp port application = do
   let settings = Warp.setPort port Warp.defaultSettings
+  _ <- logInfo . T.pack $ "Starting app on port " <> show port
   Warp.runSettings settings application

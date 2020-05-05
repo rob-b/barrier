@@ -1,8 +1,13 @@
-module Barrier.Queue where
+module Barrier.Queue
+  ( add
+  , make
+  , worker
+  , Action
+  ) where
 
 
-import           Control.Concurrent.STM.TBMQueue (TBMQueue, newTBMQueueIO, readTBMQueue,
-                                                  tryWriteTBMQueue)
+import           Control.Concurrent.STM.TBMQueue
+    (TBMQueue, newTBMQueueIO, readTBMQueue, tryWriteTBMQueue)
 import           Control.Monad                   (unless)
 import           Control.Monad.STM               (atomically)
 

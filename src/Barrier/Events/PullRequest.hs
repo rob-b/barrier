@@ -1,49 +1,55 @@
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE QuasiQuotes         #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns        #-}
 
-module Barrier.Events.PullRequest where
+module Barrier.Events.PullRequest
+  ( handlePullRequestAction
+  , handlePullRequestEvent
+  ) where
 
+
+import           Barrier.Actions              (getStoryForLink, sequenceEithers)
 import           Barrier.Check                (extractClubhouseLinks, extractClubhouseLinks2)
-import           Barrier.Clubhouse            (ClubhouseLink, Story, StoryError (StoryHttpError),
-                                               getStory, mkClubhouseStoryUrl)
+import           Barrier.Clubhouse            (mkClubhouseStoryUrl)
+import           Barrier.Clubhouse.Types      (ClubhouseLink, Story, StoryError(StoryHttpError))
 import           Barrier.Config               (AppConfig, readish)
-import           Barrier.Events.Types         (WrappedHook (WrappedHookPullRequest),
-                                               unWrapHookPullRequest)
-import           Barrier.GitHub               (addStoryLinkComment, getCommentsForPullRequest,
-                                               setHasStoryStatus, setMissingStoryStatus)
+import           Barrier.Events               (noop)
+import           Barrier.Events.Types         (WrappedHook, unWrapHookPullRequest)
+import           Barrier.GitHub
+    (addStoryLinkComment, getCommentsForPullRequest, setHasStoryStatus, setMissingStoryStatus)
 import           Barrier.ListUtils            (ordNub)
-import           Control.Error                (ExceptT, runExceptT)
+import           Control.Error                (runExceptT)
 import           Control.Logger.Simple        (logDebug)
 import           Control.Monad                (unless)
-import           Control.Monad.IO.Class       (MonadIO)
-import           Control.Monad.Reader         (runReaderT)
 import           Data.Aeson                   (Value, object, (.=))
-import           Data.Either                  (lefts)
 import           Data.Maybe                   (listToMaybe, maybeToList)
 import           Data.Monoid                  ((<>))
 import           Data.Text                    (Text)
 import qualified Data.Text                    as T
 import qualified Data.Vector                  as V
+import           Data.WorldPeace              (openUnionLift)
 import           GitHub.Data.Issues           (IssueComment, issueCommentBody)
-import           GitHub.Data.Webhooks.Events  (PullRequestEvent, PullRequestEventAction (PullRequestActionOther, PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction),
-                                               evPullReqAction, evPullReqPayload)
-import           GitHub.Data.Webhooks.Payload (HookPullRequest, getUrl, whPullReqHead,
-                                               whPullReqHtmlUrl, whPullReqTargetRef)
+import           GitHub.Data.Webhooks.Events
+    ( PullRequestEvent
+    , PullRequestEventAction(PullRequestActionOther, PullRequestEditedAction, PullRequestOpenedAction, PullRequestReopenedAction)
+    , evPullReqAction
+    , evPullReqPayload
+    )
+import           GitHub.Data.Webhooks.Payload
+    (HookPullRequest, getUrl, whPullReqHead, whPullReqHtmlUrl, whPullReqTargetRef)
 import           Text.Regex.PCRE.Heavy        (re, scan)
 
 
 --------------------------------------------------------------------------------
 -- | Given an PullRequestEvent, extract its inner payload
-getPayLoadFromPr :: PullRequestEvent -> Maybe WrappedHook
-getPayLoadFromPr pr@(evPullReqAction -> PullRequestOpenedAction) = Just $ WrappedHookPullRequest (evPullReqPayload pr)
-getPayLoadFromPr pr@(evPullReqAction -> PullRequestEditedAction) = Just $ WrappedHookPullRequest (evPullReqPayload pr)
-getPayLoadFromPr pr@(evPullReqAction -> PullRequestReopenedAction) = Just $ WrappedHookPullRequest (evPullReqPayload pr)
-getPayLoadFromPr pr@(syncCheck -> True) = Just $ WrappedHookPullRequest (evPullReqPayload pr)
-getPayLoadFromPr _ = Nothing
+getPullRequestFromEvent :: PullRequestEvent -> Maybe WrappedHook
+getPullRequestFromEvent pr@(evPullReqAction -> PullRequestOpenedAction) = Just $ openUnionLift (evPullReqPayload pr)
+getPullRequestFromEvent pr@(evPullReqAction -> PullRequestEditedAction) = Just $ openUnionLift (evPullReqPayload pr)
+getPullRequestFromEvent pr@(evPullReqAction -> PullRequestReopenedAction) = Just $ openUnionLift (evPullReqPayload pr)
+getPullRequestFromEvent pr@(syncCheck -> True) = Just $ openUnionLift (evPullReqPayload pr)
+getPullRequestFromEvent _ = Nothing
 
 
 --------------------------------------------------------------------------------
@@ -52,16 +58,14 @@ handlePullRequestEvent :: PullRequestEvent -> Value
 handlePullRequestEvent event =
   let inner = V.singleton $ object ["base" .= (ref :: Text)]
       ref = maybe "Dunno." (whPullReqTargetRef . whPullReqHead) payload
-      payload = unWrapHookPullRequest <$> getPayLoadFromPr event
+      payload = getPullRequestFromEvent event >>= unWrapHookPullRequest
   in object ["data" .= inner]
 
 
 --------------------------------------------------------------------------------
 -- | Select the appropriate action to perform on an incoming PullRequestEvent
-handlePullRequestAction :: PullRequestEvent -> Maybe (AppConfig -> IO ())
-handlePullRequestAction pr = do
-  payload <- getPayLoadFromPr pr
-  pure $ setPullRequestStatus payload
+handlePullRequestAction :: PullRequestEvent -> AppConfig -> IO ()
+handlePullRequestAction pr = maybe noop setPullRequestStatus (getPullRequestFromEvent pr)
 
 
 --------------------------------------------------------------------------------
@@ -77,16 +81,23 @@ getStoryLinkFromPayload payload = do
 
 --------------------------------------------------------------------------------
 setPullRequestStatus :: WrappedHook -> AppConfig -> IO ()
-setPullRequestStatus hook config = do
-  let payload  = unWrapHookPullRequest hook
-  resultE <- getStoriesOrDieTrying config hook
-  stories <- case resultE of
-    Left errors   -> do
-      logDebug $ "No story could be detected from " <> getUrl (whPullReqHtmlUrl payload)
-      mapM_ (logDebug . T.pack . show) errors
-      pure []
-    Right stories -> pure $ ordNub stories
-  checkerAndUpdater config payload stories
+setPullRequestStatus wrappedHook config =
+  case unWrapHookPullRequest wrappedHook of
+    Nothing              -> pure ()
+    Just hookPullRequest -> setPullRequestStatus' hookPullRequest config
+  where
+    setPullRequestStatus' :: HookPullRequest -> AppConfig -> IO ()
+    setPullRequestStatus' payload config' = do
+      resultE <- getStoriesOrDieTrying config' payload
+      stories <-
+        case resultE of
+          Left errors -> do
+            logDebug $ "No story could be detected from " <> getUrl (whPullReqHtmlUrl payload)
+            mapM_ (logDebug . T.pack . show) errors
+            pure []
+          Right stories -> pure $ ordNub stories
+      logDebug . T.pack $ show stories
+      checkerAndUpdater config' payload stories
 
 
 --------------------------------------------------------------------------------
@@ -124,16 +135,8 @@ checkerAndUpdater config payload stories = do
     setStatus [] = setMissingStoryStatus config payload
     setStatus stories'@(story:_) = do
       let story' = foundStory story
-      setHasStoryStatus config payload story'
+      setHasStoryStatus config payload
       unless (any commentsOnly stories') (addStoryLinkComment config payload story')
-
-
---------------------------------------------------------------------------------
-sequenceEithers :: [Either a b] -> Either [a] [b]
-sequenceEithers xs =
-    case sequence xs of
-      Right values -> Right values
-      Left _       -> Left (lefts xs)
 
 
 data StorySource
@@ -151,16 +154,16 @@ data FoundStory = FoundStory
 
 --------------------------------------------------------------------------------
 getStoriesOrDieTrying ::
-     AppConfig -> WrappedHook -> IO (Either [StoryError] [FoundStory])
+     AppConfig -> HookPullRequest -> IO (Either [StoryError] [FoundStory])
 getStoriesOrDieTrying config hook = do
-  let payload = unWrapHookPullRequest hook
+  let payload = hook
 
   -- try to get a link to a story by parsing the payload itself (the branch name is in the
   -- payload)
   let storyFromRef :: [ClubhouseLink] = maybeToList $ getStoryLinkFromPayload payload
 
   -- try to get link(s) to the story from the PR description (ignoring any links we already found)
-  let links :: [ClubhouseLink] = filter (`elem` storyFromRef) (extractClubhouseLinks hook)
+  let links :: [ClubhouseLink] = filter (`notElem` storyFromRef) (extractClubhouseLinks hook)
 
   -- stories gathered from the PR refname
   s <- mapM (getStoryForLink config) storyFromRef
@@ -193,10 +196,3 @@ getStoriesOrDieTrying config hook = do
     convertToDescription = fmap (FoundStory DescriptionSource)
     convertToComment = fmap (FoundStory CommentSource)
     convertToRef = fmap (FoundStory RefSource)
-
-
-linkDebug :: (Show a, MonadIO m) => a -> m ()
-linkDebug link = logDebug ("Checking link: " <> T.pack (show link))
-
-getStoryForLink :: (MonadIO m) => AppConfig -> ClubhouseLink -> m (ExceptT StoryError IO Story)
-getStoryForLink config l = linkDebug l >> runReaderT (getStory l) config

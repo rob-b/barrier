@@ -1,0 +1,37 @@
+{
+  "id": "5d400a11-e7df-4902-b689-9c65d214ba83",
+  "changed_at": "2019-07-30T09:12:50.199Z",
+  "primary_id": 5876,
+  "version": "v1",
+  "member_id": "5ad468ea-cbae-4040-9890-294d769c9326",
+  "actions": [
+    {
+      "id": 5876,
+      "entity_type": "story",
+      "action": "create",
+      "name": "Use new component styles for calculator",
+      "story_type": "feature",
+      "app_url": "https://app.clubhouse.io/zerodeposit/story/5876",
+      "project_id": 401,
+      "description": "Calc: https://zd-calculator.netlify.com\nNetlify app: https://app.netlify.com/sites/zd-calculator/overview",
+      "workflow_state_id": 500000006,
+      "follower_ids": [
+        "5ad468ea-cbae-4040-9890-294d769c9326"
+      ],
+      "requested_by_id": "5ad468ea-cbae-4040-9890-294d769c9326"
+    }
+  ],
+  "references": [
+    {
+      "id": 401,
+      "entity_type": "project",
+      "name": "zerodeposit.com"
+    },
+    {
+      "id": 500000006,
+      "entity_type": "workflow-state",
+      "name": "Backlog",
+      "type": "unstarted"
+    }
+  ]
+}

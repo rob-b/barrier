@@ -1,64 +1,78 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE AllowAmbiguousTypes       #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE DuplicateRecordFields     #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE TypeApplications          #-}
 
-module Barrier.GitHub where
 
-import           Barrier.Clubhouse                (Story, storyUrl)
+module Barrier.GitHub
+  ( addStoryLinkComment
+  , getCommentsForPullRequest
+  , setHasStoryStatus
+  , setHasStoryStatus'
+  , setMissingStoryStatus
+  , GitHubRequestParams(..)
+  ) where
+
+import           Barrier.Clubhouse.Types          (Story, storyUrl)
 import           Barrier.Config                   (AppConfig, configGitHubToken)
 import           Control.Logger.Simple            (logDebug)
 import qualified Data.ByteString                  as B
-import           Data.Proxy                       (Proxy (Proxy))
+import           Data.Generics.Product            (field)
 import           Data.Text                        (Text)
 import qualified Data.Text                        as T
 import           Data.Text.Encoding               (decodeUtf8, encodeUtf8)
 import           Data.Text.Read                   (decimal)
 import           Data.Vector                      (Vector)
+import           GHC.Generics                     (Generic)
 import qualified GitHub.Auth                      as GitHub
 import qualified GitHub.Data                      as GitHub
-import           GitHub.Data.Webhooks.Payload     (HookPullRequest, getUrl, whPullReqHead,
-                                                   whPullReqIssueUrl, whPullReqTargetRepo,
-                                                   whPullReqTargetSha, whPullReqTargetUser,
-                                                   whRepoName, whUserLogin)
+import           GitHub.Data.Webhooks.Payload
+    ( HookPullRequest
+    , getUrl
+    , whPullReqHead
+    , whPullReqIssueUrl
+    , whPullReqTargetRepo
+    , whPullReqTargetSha
+    , whPullReqTargetUser
+    , whRepoName
+    , whUserLogin
+    )
 import qualified GitHub.Endpoints.Issues.Comments as GitHub
 import qualified GitHub.Endpoints.Repos.Statuses  as GitHub
-import           Lens.Micro.Platform              (makeLenses, (^.))
+import           Lens.Micro.Platform              ((^.))
 import           System.Random                    (randomRIO)
-import           URI.ByteString                   (parseURI, serializeURIRef',
-                                                   strictURIParserOptions, uriPath)
+import           URI.ByteString
+    (parseURI, serializeURIRef', strictURIParserOptions, uriPath)
 
 
 data GitHubRequestParams = GitHubRequestParams
-  { _commit :: GitHub.Name GitHub.Commit
-  , _owner  :: GitHub.Name GitHub.Owner
-  , _repo   :: GitHub.Name GitHub.Repo
-  } deriving (Show)
-
-
-makeLenses ''GitHubRequestParams
+  { commit :: GitHub.Name GitHub.Commit
+  , owner  :: GitHub.Name GitHub.Owner
+  , repo   :: GitHub.Name GitHub.Repo
+  } deriving (Generic, Show)
 
 
 --------------------------------------------------------------------------------
 mkStatusParams :: HookPullRequest -> GitHubRequestParams
 mkStatusParams pr =
   let head' = whPullReqHead pr
-      _commit = GitHub.mkCommitName $ whPullReqTargetSha head'
-      _owner = GitHub.mkOwnerName . whUserLogin $ whPullReqTargetUser head'
-      _repo = GitHub.mkRepoName . whRepoName $ whPullReqTargetRepo head'
+      commit = GitHub.mkCommitName $ whPullReqTargetSha head'
+      owner = GitHub.mkOwnerName . whUserLogin $ whPullReqTargetUser head'
+      repo = GitHub.mkRepoName . whRepoName $ whPullReqTargetRepo head'
   in GitHubRequestParams {..}
 
 
 --------------------------------------------------------------------------------
 data GitHubCommentRequestParams = GitHubCommentRequestParams
-  { _commentIssue :: GitHub.Id GitHub.Issue
-  , _commentOwner :: GitHub.Name GitHub.Owner
-  , _commentRepo  :: GitHub.Name GitHub.Repo
-  } deriving (Show)
-
-
-makeLenses ''GitHubCommentRequestParams
+  { commentIssue :: GitHub.IssueNumber
+  , commentOwner :: GitHub.Name GitHub.Owner
+  , commentRepo  :: GitHub.Name GitHub.Repo
+  } deriving (Generic, Show)
 
 
 --------------------------------------------------------------------------------
@@ -66,30 +80,36 @@ mkCommentParams :: HookPullRequest -> GitHubCommentRequestParams
 mkCommentParams pr =
   let issueUrl = whPullReqIssueUrl pr
       head' = whPullReqHead pr
-      _commentOwner = GitHub.mkOwnerName . whUserLogin $ whPullReqTargetUser head'
-      _commentRepo = GitHub.mkRepoName . whRepoName $ whPullReqTargetRepo head'
-      _commentIssue = getIssueId (encodeUtf8 $ getUrl issueUrl)
+      commentOwner = GitHub.mkOwnerName . whUserLogin $ whPullReqTargetUser head'
+      commentRepo = GitHub.mkRepoName . whRepoName $ whPullReqTargetRepo head'
+      commentIssue = getIssueId (encodeUtf8 $ getUrl issueUrl)
   in GitHubCommentRequestParams {..}
 
 
---------------------------------------------------------------------------------
-setHasStoryStatus :: AppConfig -> HookPullRequest -> Story -> IO ()
-setHasStoryStatus conf pr _story = do
-  let auth' = GitHub.OAuth $ configGitHubToken conf
-  let params = mkStatusParams pr
+
+setHasStoryStatus' :: GitHubRequestParams -> GitHub.Auth -> IO ()
+setHasStoryStatus' params auth' = do
   content <-
     either show show <$>
     GitHub.createStatus
       auth'
-      (params ^. owner)
-      (params ^. repo)
-      (params ^. commit)
+      (params ^. field @"owner")
+      (params ^. field @"repo")
+      (params ^. field @"commit")
       (GitHub.NewStatus
          GitHub.StatusSuccess
          Nothing
          (Just "Has link to clubhouse story.")
          (Just "Barrier story check"))
   logDebug $ T.pack (show content)
+
+
+--------------------------------------------------------------------------------
+setHasStoryStatus :: AppConfig -> HookPullRequest -> IO ()
+setHasStoryStatus conf pr = do
+  let auth' = GitHub.OAuth $ configGitHubToken conf
+  let params = mkStatusParams pr
+  setHasStoryStatus' params auth'
 
 
 --------------------------------------------------------------------------------
@@ -101,9 +121,9 @@ setMissingStoryStatus conf pr = do
     either show show <$>
     GitHub.createStatus
       auth'
-      (params ^. owner)
-      (params ^. repo)
-      (params ^. commit)
+      (params ^. field @"owner")
+      (params ^. field @"repo")
+      (params ^. field @"commit")
       (GitHub.NewStatus
          GitHub.StatusError
          Nothing
@@ -125,11 +145,11 @@ statusesFor auth' owner' repo' sha' =
 
 
 -- | partial function that relies on github's promise to always return a valid issue url
-getIssueId :: B.ByteString -> GitHub.Id GitHub.Issue
+getIssueId :: B.ByteString -> GitHub.IssueNumber
 getIssueId url =
   let path = either (error . show) id $ uriPath <$> parseURI strictURIParserOptions url
       segments = B.split 47 path
-      issueId = maybe (error "oh no") (GitHub.mkId (Proxy :: Proxy GitHub.Issue)) (getId segments)
+      issueId = maybe (error "oh no") GitHub.IssueNumber (getId segments)
   in issueId
   where
     getId :: [B.ByteString] -> Maybe Int
@@ -151,9 +171,9 @@ addStoryLinkComment conf pr story = do
     either show show <$>
     GitHub.createComment
       auth'
-      (params ^. commentOwner)
-      (params ^. commentRepo)
-      (params ^. commentIssue)
+      (params ^. field @"commentOwner")
+      (params ^. field @"commentRepo")
+      ((params ^. field @"commentIssue") :: GitHub.IssueNumber)
       (decodeUtf8 . serializeURIRef' $ storyUrl story)
   logDebug $ T.pack (show content)
 
@@ -165,7 +185,11 @@ getCommentsForPullRequest :: AppConfig
 getCommentsForPullRequest conf pr = do
   let auth' = Just . GitHub.OAuth $ configGitHubToken conf
   let params = mkCommentParams pr
-  GitHub.comments' auth' (params ^. commentOwner) (params ^. commentRepo) (params ^. commentIssue)
+  GitHub.comments'
+    auth'
+    (params ^. field @"commentOwner")
+    (params ^. field @"commentRepo")
+    (params ^. field @"commentIssue")
 
 
 --------------------------------------------------------------------------------
@@ -183,12 +207,11 @@ randomWarning conf pr = do
         either show show <$>
         GitHub.createComment
           auth'
-          (params ^. commentOwner)
-          (params ^. commentRepo)
-          (params ^. commentIssue)
+          (params ^. field @"commentOwner")
+          (params ^. field @"commentRepo")
+          (params ^. field @"commentIssue")
           "Your move, creep"
       pure ()
-
 
 -- updatePullRequest :: AppConfig -> HookPullRequest -> Story -> IO ()
 -- updatePullRequest conf pr story = do
