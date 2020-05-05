@@ -18,10 +18,10 @@ import           Barrier.Check                 (extractClubhouseLinks2)
 import           Barrier.Clubhouse.Types       (ClubhouseLink, Story(Story), StoryError)
 import           Barrier.Config                (AppConfig, configGitHubToken)
 import           Barrier.Events                (noop)
-import           Barrier.GitHub                (GitHubRequestParams(..), setHasStoryStatus')
+import           Barrier.GitHub
+    (GitHubRequestParams(GitHubRequestParams), commit, owner, repo, setHasStoryStatus')
 import           Control.Error                 (ExceptT, runExceptT)
 import           Control.Logger.Simple         (logDebug)
-import           Control.Monad                 (when)
 import           Control.Monad.IO.Class        (MonadIO)
 import           Data.Aeson                    (Value, object, (.=))
 import qualified Data.ByteString.Char8         as C
@@ -30,7 +30,7 @@ import           Data.Monoid                   ((<>))
 import qualified Data.Text                     as T
 import           Data.Text.Encoding            (encodeUtf8)
 import qualified Data.Vector                   as V
-import           Debug.Trace
+import           Debug.Trace                   (traceShow)
 import qualified GitHub.Data                   as GitHub
 import           GitHub.Data.Id                (Id(Id))
 import           GitHub.Data.PullRequests      (pullRequestHead)
@@ -115,10 +115,12 @@ doThingForComment issueEvent config = do
         pullRequestForIssueCommentEvent issueEvent config >>= \case
           Left err -> error $ show err
           Right pullRequestCommit -> do
-            let m = traceShow pullRequestCommit (mkRequestParams pullRequestCommit)
-            let auth = GitHub.OAuth $ configGitHubToken config
-            y <- maybe undefined (`setHasStoryStatus'` auth) m
-            traceShow y (pure (T.pack $ show m))
+            case traceShow pullRequestCommit (mkRequestParams pullRequestCommit) of
+              Nothing -> undefined
+              Just requestParams -> do
+                let auth = GitHub.OAuth $ configGitHubToken config
+                _ <- setHasStoryStatus' requestParams auth
+                pure . T.pack $ show requestParams
 
 
 mkRequestParams :: GitHub.PullRequestCommit -> Maybe GitHubRequestParams

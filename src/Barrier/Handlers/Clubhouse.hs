@@ -53,7 +53,7 @@ convertBodyToEvent input =
   case mkChEventWithStories input of
     Left err -> Left err
     Right chEvent -> do
-      output <- case chActions chEvent of
+      case chActions chEvent of
         -- we know that mkChEventWithStories should guarantee that the actions is not empty but
         -- that's not promised at the type level so we need to check still
         [] -> Left $ EventParseError "Event did not include a story change"
@@ -64,7 +64,6 @@ convertBodyToEvent input =
               Left $ EventParseError reason
             Right expandedActions -> do
               pure expandedActions
-      pure output
 
 
 --------------------------------------------------------------------------------
