@@ -8,6 +8,7 @@ module Barrier.Config
   , readish
   , configGitHubToken
   , configGitHubSecret
+  , configPort
   , lookupEnv
   ) where
 
@@ -24,6 +25,7 @@ data AppConfig = AppConfig
   , configGitHubSecret   :: ByteString
   , configEnvironment    :: Environment
   , configGitHubBot      :: ByteString
+  , configPort           :: Int
   } deriving (Show)
 
 
@@ -58,11 +60,11 @@ mkAppConfig = do
   chTokenM <- lookupEnv "CLUBHOUSE_API_TOKEN"
   ghTokenM <- lookupEnv "GITHUB_API_TOKEN"
   ghSecretM <- lookupEnv "GITHUB_KEY"
-  let ghBot = "robozd"
+  port <- Just <$> maybe 9000 read <$> lookupEnv "PORT"
+  let ghBot = Just "robozd"
   (environmentNameM :: Maybe String) <- lookupEnv "BARRIER_ENV"
   let environment = mkEnvironment =<< environmentNameM
-  let cfg = AppConfig <$> ghTokenM <*> chTokenM <*> ghSecretM <*> environment
-  pure $ fmap (\cfg' -> cfg' ghBot) cfg
+  pure $ AppConfig <$> ghTokenM <*> chTokenM <*> ghSecretM <*> environment <*> ghBot <*> port
 
 
 --------------------------------------------------------------------------------

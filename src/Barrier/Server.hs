@@ -14,7 +14,7 @@ module Barrier.Server
   ) where
 
 import           Barrier.Config
-    (AppConfig, configGitHubSecret, lookupEnv, mkAppConfig)
+    (AppConfig, configGitHubSecret, configPort, mkAppConfig)
 import           Barrier.Handlers.Clubhouse           (processClubhouseWebhook)
 import           Barrier.Handlers.GitHub
     ( EventBody(EventBody)
