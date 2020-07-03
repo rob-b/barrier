@@ -68,9 +68,6 @@ packages:
   original:
     hackage: focus-0.1.5.2@sha256:fc5c76a5be3a9a1c456106d6f389939299c7e05a1a24938b909f043e36a3e37b,1519
 - completed:
-    cabal-file:
-      size: 3915
-      sha256: dc5ba7835cbedd91b1a13d3ecff278598db3ae24e6a427d10751bcef5b644352
     name: github-webhooks
     version: 0.12.0
     git: https://github.com/rob-b/github-webhooks.git
