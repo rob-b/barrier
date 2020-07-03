@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -11,6 +12,7 @@ module Barrier.Server
   , setupApp
   , shutdownApp
   , run
+  , queue
   ) where
 
 import           Barrier.Config
@@ -32,6 +34,8 @@ import           Control.Logger.Simple
     (LogConfig(LogConfig), logError, logInfo, withGlobalLogging)
 import           Control.Monad                        (void)
 import           Control.Monad.IO.Class               (MonadIO, liftIO)
+import           Control.Monad.Reader                 (MonadReader(ask), runReaderT)
+import           Control.Monad.Reader.Class           (asks)
 import           Control.Monad.STM                    (atomically)
 import           Data.Aeson                           (ToJSON, Value, encode, object, (.=))
 import           Data.ByteString                      (ByteString)
@@ -124,8 +128,8 @@ barrierConfig cfg = cfg { spc_errorHandler = errorHandler }
 
 
 --------------------------------------------------------------------------------
-app :: Api
-app = do
+routes :: Api
+routes = do
   prehook initHook $ do
     prehook authHook $
       post root handleGithub
@@ -188,46 +192,56 @@ handleGithub = do
 
 --------------------------------------------------------------------------------
 run :: IO ()
-run = withGlobalLogging (LogConfig Nothing True) (bracket setupApp shutdownApp runServer)
-  where
-    runServer :: (TBMQueue Q.Action, b) -> IO ()
-    runServer (queue, _worker) = do
-      appConfigM <- mkAppConfig
-      case appConfigM of
-        Nothing -> putStrLn "You must set GITHUB_KEY and CLUBHOUSE_API_TOKEN"
-        Just appConfig -> do
-          let appState = AppState queue appConfig
-          (port, application) <- mkApp appState
-          runApp port application
+run =
+  withGlobalLogging
+    (LogConfig Nothing True)
+    (bracket setupApp (runReaderT shutdownApp) (runReaderT runServer))
 
 
 --------------------------------------------------------------------------------
-shutdownApp :: (TBMQueue a, Async b) -> IO b
-shutdownApp (queue, worker) = do
-  atomically $ closeTBMQueue queue
-  wait worker
+runServer :: (MonadIO m, MonadReader Env m) => m ()
+runServer = do
+  appConfigM <- asks config
+  case appConfigM of
+    Nothing -> liftIO $ putStrLn "You must set GITHUB_KEY and CLUBHOUSE_API_TOKEN"
+    Just appConfig -> do
+      env <- ask
+      let appState = AppState (queue env) appConfig
+      let port = configPort appConfig
+      application <- liftIO $ mkApp appState
+      _ <- logInfo . T.pack $ "Starting app on port " <> show port
+      liftIO $ Warp.run port application
 
 
 --------------------------------------------------------------------------------
-setupApp :: IO (TBMQueue Q.Action, Async ())
+shutdownApp :: (MonadIO m, MonadReader Env m) => m ()
+shutdownApp = do
+  env <- ask
+  liftIO $ atomically $ closeTBMQueue (queue env)
+  liftIO $ wait (worker env)
+
+
+--------------------------------------------------------------------------------
+setupApp :: IO Env
 setupApp = do
-  queue <- Q.make 100
-  workerRef <- async $ Q.worker queue
-  pure (queue, workerRef)
+  appConfigM <- mkAppConfig
+  q <- Q.make 100
+  let worker' = Q.worker q
+  workerRef <- async worker'
+  pure Env {queue = q, worker = workerRef, config = appConfigM}
 
 
 --------------------------------------------------------------------------------
-mkApp :: AppState -> IO (Warp.Port, Application)
+data Env = Env
+  { queue  :: TBMQueue Q.Action
+  , worker :: Async ()
+  , config :: Maybe AppConfig
+  }
+
+
+--------------------------------------------------------------------------------
+mkApp :: AppState -> IO (Application)
 mkApp appState = do
-  port <- maybe 9000  read <$> lookupEnv "PORT"
   spockConfig <- barrierConfig <$> defaultSpockCfg () PCNoDatabase appState
-  app' <- spockAsApp (spock spockConfig app)
-  pure (port, logger app')
-
-
---------------------------------------------------------------------------------
-runApp :: Warp.Port -> Application -> IO ()
-runApp port application = do
-  let settings = Warp.setPort port Warp.defaultSettings
-  _ <- logInfo . T.pack $ "Starting app on port " <> show port
-  Warp.runSettings settings application
+  app' <- spockAsApp (spock spockConfig routes)
+  pure $ logger app'

@@ -9,6 +9,7 @@ module Barrier.Queue
 import           Control.Concurrent.STM.TBMQueue
     (TBMQueue, newTBMQueueIO, readTBMQueue, tryWriteTBMQueue)
 import           Control.Monad                   (unless)
+import           Control.Monad.IO.Class          (MonadIO, liftIO)
 import           Control.Monad.STM               (atomically)
 
 
@@ -16,8 +17,8 @@ type Action = IO ()
 
 
 --------------------------------------------------------------------------------
-make :: Int -> IO (TBMQueue Action)
-make = newTBMQueueIO
+make :: (MonadIO m) => Int -> m (TBMQueue Action)
+make = liftIO . newTBMQueueIO
 
 
 --------------------------------------------------------------------------------

@@ -18,11 +18,12 @@ module Barrier.DevelMain (update, shutdown) where
 
 import           Barrier.Config           (mkAppConfig)
 import           Barrier.Queue            ()
-import           Barrier.Server           (AppState(AppState), mkApp, setupApp, shutdownApp)
+import           Barrier.Server           (AppState(AppState), mkApp, queue, setupApp, shutdownApp)
 import           Control.Concurrent
     (MVar, ThreadId, forkIO, killThread, newEmptyMVar, putMVar, takeMVar)
 import           Control.Exception        (finally)
 import           Control.Monad            ((>=>))
+import           Control.Monad.Reader     (ReaderT(runReaderT))
 import           Data.IORef               (IORef, newIORef, readIORef, writeIORef)
 import           Foreign.Store
     (Store(Store), lookupStore, readStore, storeAction, withStore)
@@ -68,13 +69,14 @@ update = do
       case appConfigM of
         Nothing -> putStrLn "Cannot create config." >> exitFailure
         Just appConfig -> do
-          (queue, _worker) <- setupApp
-          let appState = AppState queue appConfig
-          (port, app) <- mkApp appState
+          env <- setupApp
+          let queue' = queue env
+          let appState = AppState queue' appConfig
+          app <- mkApp appState
           forkIO
             (finally
-               (runSettings (setPort port defaultSettings) app)
-               (putMVar done () >> shutdownApp (queue, _worker)))
+               (runSettings (setPort 9000 defaultSettings) app)
+               (putMVar done () >> runReaderT shutdownApp env))
 
 
 --------------------------------------------------------------------------------
